@@ -6,21 +6,27 @@
 
 #include <dlfcn.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
-using MallocFn = void* (*)(size_t);
-using FreeFn   = void (*)(void*);
+using MallocFn  = void* (*)(size_t);
+using CallocFn  = void* (*)(size_t, size_t);
+using ReallocFn = void* (*)(void*, size_t);
+using FreeFn    = void (*)(void*);
 
 /**
  * @brief Allocator entry points of the next library in the lookup order.
  */
-MallocFn real_malloc = nullptr;
-FreeFn real_free     = nullptr;
+MallocFn real_malloc   = nullptr;
+CallocFn real_calloc   = nullptr;
+ReallocFn real_realloc = nullptr;
+FreeFn real_free       = nullptr;
 
 /**
  * @brief Number of successful allocations.
@@ -66,10 +72,12 @@ bool from_bootstrap(const void* ptr) {
 void resolve() {
   static bool resolving = false;
   if (resolving) return;
-  resolving   = true;
-  real_malloc = reinterpret_cast<MallocFn>(dlsym(RTLD_NEXT, "malloc"));
-  real_free   = reinterpret_cast<FreeFn>(dlsym(RTLD_NEXT, "free"));
-  resolving   = false;
+  resolving    = true;
+  real_malloc  = reinterpret_cast<MallocFn>(dlsym(RTLD_NEXT, "malloc"));
+  real_calloc  = reinterpret_cast<CallocFn>(dlsym(RTLD_NEXT, "calloc"));
+  real_realloc = reinterpret_cast<ReallocFn>(dlsym(RTLD_NEXT, "realloc"));
+  real_free    = reinterpret_cast<FreeFn>(dlsym(RTLD_NEXT, "free"));
+  resolving    = false;
 }
 
 __attribute__((constructor)) void init() { resolve(); }
@@ -97,4 +105,36 @@ extern "C" void free(void* ptr) noexcept {
   if (!real_free) resolve();
   record_free(ptr);
   real_free(ptr);
+}
+
+extern "C" void* calloc(size_t count, size_t size) noexcept {
+  if (!real_calloc) resolve();
+  if (!real_calloc) {
+    if (size != 0 && count > SIZE_MAX / size) return nullptr;
+    return bootstrap_alloc(count * size);
+  }
+  void* ptr = real_calloc(count, size);
+  record_alloc(ptr);
+  return ptr;
+}
+
+/**
+ * @brief Counted as a release of the old block followed by an allocation of
+ * the new one, so that allocations and releases stay balanced.
+ */
+extern "C" void* realloc(void* ptr, size_t size) noexcept {
+  if (from_bootstrap(ptr)) {
+    void* moved = malloc(size);
+    if (moved) {
+      auto* end = bootstrap_buf + sizeof(bootstrap_buf);
+      std::memcpy(moved, ptr,
+                  std::min<size_t>(size, end - static_cast<char*>(ptr)));
+    }
+    return moved;
+  }
+  if (!real_realloc) resolve();
+  void* moved = real_realloc(ptr, size);
+  if (moved || size == 0) record_free(ptr);
+  record_alloc(moved);
+  return moved;
 }
