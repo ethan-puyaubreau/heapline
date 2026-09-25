@@ -15,18 +15,22 @@
 
 namespace {
 
-using MallocFn  = void* (*)(size_t);
-using CallocFn  = void* (*)(size_t, size_t);
-using ReallocFn = void* (*)(void*, size_t);
-using FreeFn    = void (*)(void*);
+using MallocFn        = void* (*)(size_t);
+using CallocFn        = void* (*)(size_t, size_t);
+using ReallocFn       = void* (*)(void*, size_t);
+using FreeFn          = void (*)(void*);
+using PosixMemalignFn = int (*)(void**, size_t, size_t);
+using AlignedAllocFn  = void* (*)(size_t, size_t);
 
 /**
  * @brief Allocator entry points of the next library in the lookup order.
  */
-MallocFn real_malloc   = nullptr;
-CallocFn real_calloc   = nullptr;
-ReallocFn real_realloc = nullptr;
-FreeFn real_free       = nullptr;
+MallocFn real_malloc                = nullptr;
+CallocFn real_calloc                = nullptr;
+ReallocFn real_realloc              = nullptr;
+FreeFn real_free                    = nullptr;
+PosixMemalignFn real_posix_memalign = nullptr;
+AlignedAllocFn real_aligned_alloc   = nullptr;
 
 /**
  * @brief Number of successful allocations.
@@ -77,7 +81,11 @@ void resolve() {
   real_calloc  = reinterpret_cast<CallocFn>(dlsym(RTLD_NEXT, "calloc"));
   real_realloc = reinterpret_cast<ReallocFn>(dlsym(RTLD_NEXT, "realloc"));
   real_free    = reinterpret_cast<FreeFn>(dlsym(RTLD_NEXT, "free"));
-  resolving    = false;
+  real_posix_memalign =
+      reinterpret_cast<PosixMemalignFn>(dlsym(RTLD_NEXT, "posix_memalign"));
+  real_aligned_alloc =
+      reinterpret_cast<AlignedAllocFn>(dlsym(RTLD_NEXT, "aligned_alloc"));
+  resolving = false;
 }
 
 __attribute__((constructor)) void init() { resolve(); }
@@ -137,4 +145,19 @@ extern "C" void* realloc(void* ptr, size_t size) noexcept {
   if (moved || size == 0) record_free(ptr);
   record_alloc(moved);
   return moved;
+}
+
+extern "C" int posix_memalign(void** ptr, size_t alignment,
+                              size_t size) noexcept {
+  if (!real_posix_memalign) resolve();
+  int err = real_posix_memalign(ptr, alignment, size);
+  if (err == 0) record_alloc(*ptr);
+  return err;
+}
+
+extern "C" void* aligned_alloc(size_t alignment, size_t size) noexcept {
+  if (!real_aligned_alloc) resolve();
+  void* ptr = real_aligned_alloc(alignment, size);
+  record_alloc(ptr);
+  return ptr;
 }
