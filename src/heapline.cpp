@@ -4,6 +4,8 @@
 #define _GNU_SOURCE
 #endif
 
+#include "heapline.h"
+
 #include <dlfcn.h>
 #include <malloc.h>
 #include <unistd.h>
@@ -173,6 +175,13 @@ __attribute__((destructor)) void print_summary() {
 }
 
 }  // namespace
+
+extern "C" void heapline_get_stats(heapline_stats* stats) {
+  stats->allocs     = alloc_count.load();
+  stats->frees      = free_count.load();
+  stats->live_bytes = live_bytes.load();
+  stats->peak_bytes = peak_bytes.load();
+}
 
 extern "C" void* malloc(size_t size) noexcept {
   if (!real_malloc) resolve();

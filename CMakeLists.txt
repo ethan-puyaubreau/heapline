@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(HEAPLINE_ENABLE_WERROR "Treat compiler warnings as errors" OFF)
 
 add_library(heapline SHARED src/heapline.cpp)
+target_include_directories(heapline PUBLIC include)
 target_link_libraries(heapline PRIVATE ${CMAKE_DL_LIBS})
 target_compile_options(heapline PRIVATE -Wall -Wextra -Wpedantic
                        $<$<BOOL:${HEAPLINE_ENABLE_WERROR}>:-Werror>)
