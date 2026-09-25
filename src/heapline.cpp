@@ -6,13 +6,16 @@
 
 #include <dlfcn.h>
 #include <malloc.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 
 namespace {
 
@@ -128,6 +131,45 @@ void record_free(void* ptr, size_t size) {
   if (!ptr) return;
   free_count.fetch_add(1, std::memory_order_relaxed);
   live_bytes.fetch_sub(static_cast<int64_t>(size), std::memory_order_relaxed);
+}
+
+/**
+ * @brief Format a byte count with a binary unit suffix.
+ */
+void format_bytes(char* buf, size_t len, int64_t bytes) {
+  static const char* const units[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+  auto value                       = static_cast<double>(bytes);
+  size_t unit                      = 0;
+  while ((value >= 1024.0 || value <= -1024.0) && unit + 1 < std::size(units)) {
+    value /= 1024.0;
+    ++unit;
+  }
+  if (unit == 0)
+    std::snprintf(buf, len, "%lld B", static_cast<long long>(bytes));
+  else
+    std::snprintf(buf, len, "%.1f %s", value, units[unit]);
+}
+
+/**
+ * @brief Print the counters to stderr when the library is unloaded.
+ *
+ * Writes with snprintf and write rather than stdio streams, which may
+ * allocate or already be closed at this point.
+ */
+__attribute__((destructor)) void print_summary() {
+  char peak[32];
+  char live[32];
+  char line[160];
+  format_bytes(peak, sizeof(peak), peak_bytes.load());
+  format_bytes(live, sizeof(live), live_bytes.load());
+  int len = std::snprintf(
+      line, sizeof(line),
+      "heapline: %llu allocs, %llu frees, peak %s, live at exit %s\n",
+      static_cast<unsigned long long>(alloc_count.load()),
+      static_cast<unsigned long long>(free_count.load()), peak, live);
+  if (len <= 0) return;
+  [[maybe_unused]] ssize_t written =
+      write(STDERR_FILENO, line, std::min<size_t>(len, sizeof(line) - 1));
 }
 
 }  // namespace
