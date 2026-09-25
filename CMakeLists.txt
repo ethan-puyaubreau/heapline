@@ -15,6 +15,10 @@ add_library(heapline SHARED src/heapline.cpp)
 target_include_directories(heapline PUBLIC include)
 target_link_libraries(heapline PRIVATE ${CMAKE_DL_LIBS})
 
+include(GNUInstallDirs)
+install(TARGETS heapline LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES include/heapline.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
 if(HEAPLINE_ENABLE_TESTS)
   enable_testing()
   add_subdirectory(tests)
