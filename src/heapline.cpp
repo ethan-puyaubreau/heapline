@@ -5,6 +5,7 @@
 #endif
 
 #include <dlfcn.h>
+#include <malloc.h>
 
 #include <algorithm>
 #include <atomic>
@@ -41,6 +42,19 @@ std::atomic<uint64_t> alloc_count{0};
  * @brief Number of non-null pointers released.
  */
 std::atomic<uint64_t> free_count{0};
+
+/**
+ * @brief Bytes currently allocated, as reported by malloc_usable_size.
+ *
+ * Signed so that releasing blocks allocated outside of the tracked entry
+ * points shows up as a negative value instead of wrapping around.
+ */
+std::atomic<int64_t> live_bytes{0};
+
+/**
+ * @brief Highest value reached by live_bytes.
+ */
+std::atomic<int64_t> peak_bytes{0};
 
 /**
  * @brief Arena serving allocations made while the real allocator is being
@@ -90,12 +104,30 @@ void resolve() {
 
 __attribute__((constructor)) void init() { resolve(); }
 
+/**
+ * @brief Account for a new block.
+ *
+ * The usable size is read back from the allocator, so no table of live
+ * pointers is needed and nothing is allocated on this path.
+ */
 void record_alloc(void* ptr) {
-  if (ptr) alloc_count.fetch_add(1, std::memory_order_relaxed);
+  if (!ptr) return;
+  alloc_count.fetch_add(1, std::memory_order_relaxed);
+  auto size    = static_cast<int64_t>(malloc_usable_size(ptr));
+  int64_t live = live_bytes.fetch_add(size, std::memory_order_relaxed) + size;
+  int64_t peak = peak_bytes.load(std::memory_order_relaxed);
+  while (live > peak && !peak_bytes.compare_exchange_weak(
+                            peak, live, std::memory_order_relaxed)) {
+  }
 }
 
-void record_free(void* ptr) {
-  if (ptr) free_count.fetch_add(1, std::memory_order_relaxed);
+/**
+ * @brief Account for a released block of the given usable size.
+ */
+void record_free(void* ptr, size_t size) {
+  if (!ptr) return;
+  free_count.fetch_add(1, std::memory_order_relaxed);
+  live_bytes.fetch_sub(static_cast<int64_t>(size), std::memory_order_relaxed);
 }
 
 }  // namespace
@@ -111,7 +143,7 @@ extern "C" void* malloc(size_t size) noexcept {
 extern "C" void free(void* ptr) noexcept {
   if (from_bootstrap(ptr)) return;
   if (!real_free) resolve();
-  record_free(ptr);
+  record_free(ptr, malloc_usable_size(ptr));
   real_free(ptr);
 }
 
@@ -141,8 +173,9 @@ extern "C" void* realloc(void* ptr, size_t size) noexcept {
     return moved;
   }
   if (!real_realloc) resolve();
-  void* moved = real_realloc(ptr, size);
-  if (moved || size == 0) record_free(ptr);
+  size_t old_size = malloc_usable_size(ptr);
+  void* moved     = real_realloc(ptr, size);
+  if (moved || size == 0) record_free(ptr, old_size);
   record_alloc(moved);
   return moved;
 }
