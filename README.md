@@ -26,6 +26,18 @@ ctest --test-dir build --output-on-failure
 | `HEAPLINE_ENABLE_TESTS` | `ON` | Build the tests |
 | `HEAPLINE_ENABLE_WERROR` | `OFF` | Treat compiler warnings as errors |
 
+## Output
+
+The summary goes to stderr. Set `HEAPLINE_OUTPUT` to write it to a file
+instead; `%p` in the name is replaced with the process id, so each MPI rank
+gets its own file:
+
+```
+mpirun -n 4 env HEAPLINE_OUTPUT=heapline.%p.txt LD_PRELOAD=$PWD/libheapline.so ./app
+```
+
+If the file cannot be opened, the summary falls back to stderr.
+
 ## How it works
 
 - `malloc`, `calloc`, `realloc`, `free`, `posix_memalign` and `aligned_alloc`
@@ -45,8 +57,8 @@ ctest --test-dir build --output-on-failure
 - Blocks from `memalign`, `valloc` and `pvalloc` are not tracked, and
   releasing them lowers the live byte count.
 - Sizes are usable sizes, slightly above the requested sizes.
-- The summary is lost when the program closes stderr before exiting, as
-  GNU coreutils do.
+- Without `HEAPLINE_OUTPUT`, the summary is lost when the program closes
+  stderr before exiting, as GNU coreutils do.
 
 ## License
 

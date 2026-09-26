@@ -7,11 +7,13 @@
 #include "heapline.h"
 
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <malloc.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -153,7 +155,38 @@ void format_bytes(char* buf, size_t len, int64_t bytes) {
 }
 
 /**
- * @brief Print the counters to stderr when the library is unloaded.
+ * @brief Copy @p pattern into @p buf, replacing each %p with the process id.
+ */
+void expand_path(char* buf, size_t len, const char* pattern) {
+  size_t out = 0;
+  for (const char* c = pattern; *c && out + 1 < len; ++c) {
+    if (c[0] == '%' && c[1] == 'p') {
+      int n = std::snprintf(buf + out, len - out, "%d", getpid());
+      if (n < 0) break;
+      out = std::min<size_t>(out + n, len - 1);
+      ++c;
+    } else {
+      buf[out++] = *c;
+    }
+  }
+  buf[out] = '\0';
+}
+
+/**
+ * @brief Open the summary destination: the file named by HEAPLINE_OUTPUT when
+ * set, stderr otherwise or when the file cannot be opened.
+ */
+int open_output() {
+  const char* pattern = getenv("HEAPLINE_OUTPUT");
+  if (!pattern || !*pattern) return STDERR_FILENO;
+  char path[PATH_MAX];
+  expand_path(path, sizeof(path), pattern);
+  int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+  return fd < 0 ? STDERR_FILENO : fd;
+}
+
+/**
+ * @brief Print the counters when the library is unloaded.
  *
  * Writes with snprintf and write rather than stdio streams, which may
  * allocate or already be closed at this point.
@@ -170,8 +203,10 @@ __attribute__((destructor)) void print_summary() {
       static_cast<unsigned long long>(alloc_count.load()),
       static_cast<unsigned long long>(free_count.load()), peak, live);
   if (len <= 0) return;
+  int fd = open_output();
   [[maybe_unused]] ssize_t written =
-      write(STDERR_FILENO, line, std::min<size_t>(len, sizeof(line) - 1));
+      write(fd, line, std::min<size_t>(len, sizeof(line) - 1));
+  if (fd != STDERR_FILENO) close(fd);
 }
 
 }  // namespace
