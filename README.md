@@ -40,8 +40,9 @@ If the file cannot be opened, the summary falls back to stderr.
 
 ## How it works
 
-- `malloc`, `calloc`, `realloc`, `free`, `posix_memalign` and `aligned_alloc`
-  are forwarded to the next definition found with `dlsym(RTLD_NEXT, ...)`.
+- `malloc`, `calloc`, `realloc`, `free`, `posix_memalign`, `aligned_alloc`,
+  `memalign`, `valloc` and `pvalloc` are forwarded to the next definition
+  found with `dlsym(RTLD_NEXT, ...)`.
 - Block sizes come from `malloc_usable_size`, so no table of live pointers is
   kept and nothing is allocated on the interception path.
 - Counters are lock-free atomics. A `realloc` counts as one release and one
@@ -54,8 +55,6 @@ If the file cannot be opened, the summary falls back to stderr.
 - Statically linked programs cannot be intercepted.
 - Programs using another allocator, such as jemalloc or tcmalloc, bypass
   heapline.
-- Blocks from `memalign`, `valloc` and `pvalloc` are not tracked, and
-  releasing them lowers the live byte count.
 - Sizes are usable sizes, slightly above the requested sizes.
 - Without `HEAPLINE_OUTPUT`, the summary is lost when the program closes
   stderr before exiting, as GNU coreutils do.

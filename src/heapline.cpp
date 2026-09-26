@@ -29,6 +29,8 @@ using ReallocFn       = void* (*)(void*, size_t);
 using FreeFn          = void (*)(void*);
 using PosixMemalignFn = int (*)(void**, size_t, size_t);
 using AlignedAllocFn  = void* (*)(size_t, size_t);
+using MemalignFn      = void* (*)(size_t, size_t);
+using VallocFn        = void* (*)(size_t);
 
 /**
  * @brief Allocator entry points of the next library in the lookup order.
@@ -39,6 +41,9 @@ ReallocFn real_realloc              = nullptr;
 FreeFn real_free                    = nullptr;
 PosixMemalignFn real_posix_memalign = nullptr;
 AlignedAllocFn real_aligned_alloc   = nullptr;
+MemalignFn real_memalign            = nullptr;
+VallocFn real_valloc                = nullptr;
+VallocFn real_pvalloc               = nullptr;
 
 /**
  * @brief Number of successful allocations.
@@ -106,7 +111,10 @@ void resolve() {
       reinterpret_cast<PosixMemalignFn>(dlsym(RTLD_NEXT, "posix_memalign"));
   real_aligned_alloc =
       reinterpret_cast<AlignedAllocFn>(dlsym(RTLD_NEXT, "aligned_alloc"));
-  resolving = false;
+  real_memalign = reinterpret_cast<MemalignFn>(dlsym(RTLD_NEXT, "memalign"));
+  real_valloc   = reinterpret_cast<VallocFn>(dlsym(RTLD_NEXT, "valloc"));
+  real_pvalloc  = reinterpret_cast<VallocFn>(dlsym(RTLD_NEXT, "pvalloc"));
+  resolving     = false;
 }
 
 __attribute__((constructor)) void init() { resolve(); }
@@ -277,6 +285,31 @@ extern "C" int posix_memalign(void** ptr, size_t alignment,
 extern "C" void* aligned_alloc(size_t alignment, size_t size) noexcept {
   if (!real_aligned_alloc) resolve();
   void* ptr = real_aligned_alloc(alignment, size);
+  record_alloc(ptr);
+  return ptr;
+}
+
+/**
+ * @brief Legacy page and alignment allocators, still found in older codes.
+ * Tracked so that releasing their blocks keeps the live byte count right.
+ */
+extern "C" void* memalign(size_t alignment, size_t size) noexcept {
+  if (!real_memalign) resolve();
+  void* ptr = real_memalign(alignment, size);
+  record_alloc(ptr);
+  return ptr;
+}
+
+extern "C" void* valloc(size_t size) noexcept {
+  if (!real_valloc) resolve();
+  void* ptr = real_valloc(size);
+  record_alloc(ptr);
+  return ptr;
+}
+
+extern "C" void* pvalloc(size_t size) noexcept {
+  if (!real_pvalloc) resolve();
+  void* ptr = real_pvalloc(size);
   record_alloc(ptr);
   return ptr;
 }

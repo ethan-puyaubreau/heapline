@@ -3,6 +3,8 @@
 #include "heapline.h"
 
 #include <dlfcn.h>
+#include <malloc.h>
+#include <unistd.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -15,8 +17,8 @@ using GetStatsFn = void (*)(heapline_stats*);
 constexpr int kBlocks       = 100;
 constexpr int64_t kSize     = 1000;
 constexpr int64_t kAlign    = 4096;
-constexpr int64_t kCount    = kBlocks + 4;
-constexpr int64_t kRequired = (kBlocks + 2) * kSize + kBlocks * 8 + kAlign;
+constexpr int64_t kCount    = kBlocks + 7;
+constexpr int64_t kRequired = (kBlocks + 4) * kSize + kBlocks * 8 + kAlign;
 
 /**
  * @brief Upper bound on the rounding added by glibc to each usable size.
@@ -60,6 +62,9 @@ int main() {
   void* aligned = std::aligned_alloc(kAlign, kAlign);
   void* posix   = nullptr;
   int err       = posix_memalign(&posix, 64, kSize);
+  void* legacy  = memalign(64, kSize);
+  void* page    = valloc(kSize);
+  void* rounded = pvalloc(kSize);
 
   get_stats(&during);
 
@@ -67,12 +72,18 @@ int main() {
   std::free(zeroed);
   std::free(aligned);
   std::free(posix);
+  std::free(legacy);
+  std::free(page);
+  std::free(rounded);
 
   get_stats(&after);
 
-  check(blocks[0] && zeroed && aligned && err == 0, "allocations succeed");
+  check(blocks[0] && zeroed && aligned && err == 0 && legacy && page && rounded,
+        "allocations succeed");
 
-  int64_t live = during.live_bytes - before.live_bytes;
+  // pvalloc rounds the request up to a whole page.
+  const int64_t page_size = sysconf(_SC_PAGESIZE);
+  int64_t live            = during.live_bytes - before.live_bytes - page_size;
   check(during.allocs - before.allocs == kCount, "allocs during");
   check(during.frees - before.frees == 1, "frees during");
   check(live >= kRequired, "live bytes cover the requested sizes");
