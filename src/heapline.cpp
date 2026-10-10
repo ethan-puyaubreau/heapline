@@ -246,18 +246,36 @@ void retire(void* arg);
  * registered is set first, so that an allocation made while registering,
  * by pthread_setspecific for instance, does not register again.
  *
- * A thread whose first counted operation comes after the last round of key
- * destructors, made by another TLS destructor for instance, sets the key too
- * late for retire() to run: it stays in the registry after its exit. This
- * needs a thread that made no counted operation earlier in its life.
+ * A thread whose first counted operation is made by a key destructor in the
+ * last round sets exit_key too late for retire() to run: it stays in the
+ * registry after its exit. Destructors of C++ thread_local objects run before
+ * the keys, so only another key can cause this, in a thread that made no
+ * counted operation earlier in its life. glibc may then give the stack of
+ * that thread, which holds its counters, to a new thread, and so may a child
+ * created without the fork handlers, which keeps the registry of its parent.
+ * The new thread finds its counters already in the registry. Linking them a
+ * second time would make a cycle, so it only takes them over. They were
+ * zeroed with the stack: the counts of the dead thread, and the entries of
+ * the threads registered before it, are missing from the totals.
  */
 void register_thread() {
   if (holds_registry || !registry_ready.load(std::memory_order_acquire)) return;
   local.registered = true;
   pthread_mutex_lock(&registry_mutex);
-  local.next = registry;
-  registry   = &local;
-  limit_shift.store(shift_for(++registered_threads), std::memory_order_relaxed);
+  bool listed = false;
+  for (ThreadCounters* counters = registry; counters;
+       counters                 = counters->next) {
+    if (counters == &local) {
+      listed = true;
+      break;
+    }
+  }
+  if (!listed) {
+    local.next = registry;
+    registry   = &local;
+    limit_shift.store(shift_for(++registered_threads),
+                      std::memory_order_relaxed);
+  }
   local.own = true;
   pthread_mutex_unlock(&registry_mutex);
   // Without the key, the thread would stay in the registry after its exit.
