@@ -29,16 +29,16 @@ set_tests_properties(fork_child PROPERTIES
                      ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>
                      TIMEOUT 30)
 
-# A thread that stays in the registry after its exit must not be linked a
-# second time when its stack is reused.
+# A thread that keeps its counters after its exit stays counted when its stack
+# is reused. The test skips itself when glibc does not reuse the stack.
 add_executable(stale_thread stale_thread.cpp)
 target_include_directories(stale_thread PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(stale_thread PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
 target_compile_options(stale_thread PRIVATE -fno-builtin)
-add_test(NAME stale_thread COMMAND stale_thread)
-set_tests_properties(stale_thread PROPERTIES
-                     ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>
-                     TIMEOUT 30)
+add_test(NAME stale_thread
+         COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/check_stale_thread.sh
+                 $<TARGET_FILE:heapline> $<TARGET_FILE:stale_thread>)
+set_tests_properties(stale_thread PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
 
 set(check_record ${CMAKE_CURRENT_SOURCE_DIR}/check_record.sh)
 set(lib $<TARGET_FILE:heapline>)
