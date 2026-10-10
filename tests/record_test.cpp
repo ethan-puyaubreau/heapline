@@ -106,11 +106,43 @@ void test_status() {
   check(own.vmhwm_bytes >= own.vmrss_bytes, "VmHWM covers VmRSS");
 }
 
+void test_format_record() {
+  heapline::Record record;
+  record.rank                    = 3;
+  record.host                    = "node,a\"b";
+  record.pid                     = 1234;
+  record.job                     = "4242";
+  record.elapsed_s               = 12.5;
+  record.allocs                  = 100;
+  record.frees                   = 90;
+  record.peak_heap_bytes         = 1048576;
+  record.peak_heap_time_s        = 4.25;
+  record.live_heap_at_exit_bytes = 512;
+  record.vmhwm_bytes             = 2097152;
+  record.vmrss_at_exit_bytes     = 1572864;
+
+  char buf[1024];
+  int len = heapline::format_record(buf, sizeof(buf), record);
+  const char* expected =
+      "# heapline 1\n"
+      "rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,"
+      "peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,"
+      "vmrss_at_exit_bytes\n"
+      "3,node_a_b,1234,4242,12.500,100,90,1048576,4.250,512,2097152,1572864\n";
+  check(std::strcmp(buf, expected) == 0, "record text");
+  check(len == static_cast<int>(std::strlen(expected)), "record length");
+
+  char small[16];
+  check(heapline::format_record(small, sizeof(small), record) == -1,
+        "too small a buffer gives -1");
+}
+
 }  // namespace
 
 int main() {
   test_find_rank();
   test_expand_path();
   test_status();
+  test_format_record();
   return failures == 0 ? 0 : 1;
 }

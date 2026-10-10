@@ -49,6 +49,19 @@ int64_t field_bytes(const char* text, const char* key) {
   return -1;
 }
 
+/**
+ * @brief Copy @p in into @p out, replacing the characters that would break a
+ * CSV field with underscores.
+ */
+void sanitize(char* out, size_t len, const char* in) {
+  size_t i = 0;
+  for (; in && in[i] && i + 1 < len; ++i) {
+    char c = in[i];
+    out[i] = (c == ',' || c == '"' || c == '\n' || c == '\r') ? '_' : c;
+  }
+  out[i] = '\0';
+}
+
 }  // namespace
 
 long find_rank(EnvLookup lookup) {
@@ -102,6 +115,23 @@ ProcStatus read_status() {
   close(fd);
   buf[used] = '\0';
   return parse_status(buf);
+}
+
+int format_record(char* buf, size_t len, const Record& record) {
+  char host[256];
+  char job[64];
+  sanitize(host, sizeof(host), record.host);
+  sanitize(job, sizeof(job), record.job);
+  int n = std::snprintf(
+      buf, len, "%s%ld,%s,%ld,%s,%.3f,%llu,%llu,%lld,%.3f,%lld,%lld,%lld\n",
+      kRecordHeader, record.rank, host, record.pid, job, record.elapsed_s,
+      static_cast<unsigned long long>(record.allocs),
+      static_cast<unsigned long long>(record.frees),
+      static_cast<long long>(record.peak_heap_bytes), record.peak_heap_time_s,
+      static_cast<long long>(record.live_heap_at_exit_bytes),
+      static_cast<long long>(record.vmhwm_bytes),
+      static_cast<long long>(record.vmrss_at_exit_bytes));
+  return n < 0 || static_cast<size_t>(n) >= len ? -1 : n;
 }
 
 }  // namespace heapline

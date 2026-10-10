@@ -57,6 +57,43 @@ ProcStatus parse_status(const char* text);
  */
 ProcStatus read_status();
 
+/**
+ * @brief Values written to the record of one process.
+ */
+struct Record {
+  long rank                       = -1;  ///< MPI rank, -1 outside MPI.
+  const char* host                = "";  ///< Host name.
+  long pid                        = 0;   ///< Process id.
+  const char* job                 = "";  ///< SLURM_JOB_ID, empty if unset.
+  double elapsed_s                = 0;   ///< Time since the library loaded.
+  uint64_t allocs                 = 0;   ///< Successful allocations.
+  uint64_t frees                  = 0;   ///< Released blocks.
+  int64_t peak_heap_bytes         = 0;   ///< Highest live heap.
+  double peak_heap_time_s         = 0;   ///< When the peak was reached.
+  int64_t live_heap_at_exit_bytes = 0;   ///< Live heap at exit.
+  int64_t vmhwm_bytes             = -1;  ///< Peak resident set size.
+  int64_t vmrss_at_exit_bytes     = -1;  ///< Resident set size at exit.
+};
+
+/**
+ * @brief First two lines of a version 1 record: format tag and column names.
+ */
+inline constexpr char kRecordHeader[] =
+    "# heapline 1\n"
+    "rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,"
+    "peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,"
+    "vmrss_at_exit_bytes\n";
+
+/**
+ * @brief Write the header and the values of @p record as CSV into @p buf.
+ *
+ * Commas, quotes and line breaks in the host and job names are replaced with
+ * underscores, so that every value stays a single CSV field.
+ *
+ * @return Number of characters written, or -1 when @p buf is too small.
+ */
+int format_record(char* buf, size_t len, const Record& record);
+
 }  // namespace heapline
 
 #endif
