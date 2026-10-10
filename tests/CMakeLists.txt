@@ -19,7 +19,7 @@ set_tests_properties(alloc_threads PROPERTIES
                      SKIP_RETURN_CODE 77)
 
 # A forked child that starts a thread must not hang on the registry of the
-# parent's threads.
+# parent's threads, and it must hold the counts of its parent once.
 add_executable(fork_child fork_child.cpp)
 target_include_directories(fork_child PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(fork_child PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
@@ -39,6 +39,18 @@ add_test(NAME stale_thread
          COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/check_stale_thread.sh
                  $<TARGET_FILE:heapline> $<TARGET_FILE:stale_thread>)
 set_tests_properties(stale_thread PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
+
+# With several threads, the peak stays within its documented bound. The test
+# reserves 1 GiB of address space, and skips itself when it cannot.
+add_executable(peak_threads peak_threads.cpp)
+target_include_directories(peak_threads PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(peak_threads PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
+target_compile_options(peak_threads PRIVATE -fno-builtin)
+add_test(NAME peak_threads COMMAND peak_threads)
+set_tests_properties(peak_threads PROPERTIES
+                     ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>
+                     TIMEOUT 30
+                     SKIP_RETURN_CODE 77)
 
 set(check_record ${CMAKE_CURRENT_SOURCE_DIR}/check_record.sh)
 set(lib $<TARGET_FILE:heapline>)

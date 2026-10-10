@@ -30,6 +30,7 @@ using GetStatsFn = void (*)(heapline_stats*);
  */
 constexpr intptr_t kRounds       = PTHREAD_DESTRUCTOR_ITERATIONS;
 constexpr int kMainPairs         = 50;
+constexpr int kLatePairs         = 32;
 constexpr int kPairs             = 100;
 constexpr int kSkip              = 77;
 constexpr unsigned kAlarmSeconds = 5;
@@ -58,7 +59,8 @@ bool near(int64_t value, int64_t expected, int64_t slack) {
 
 /**
  * @brief Ask for another round until the last one, and make the first counted
- * operation of the thread there.
+ * operations of the thread there. They are more than the allowance of the
+ * checks, so that losing them is noticed.
  */
 void late_allocation(void* value) {
   const auto round = reinterpret_cast<intptr_t>(value);
@@ -66,7 +68,7 @@ void late_allocation(void* value) {
     pthread_setspecific(key, reinterpret_cast<void*>(round + 1));
     return;
   }
-  std::free(std::malloc(100));
+  for (int i = 0; i < kLatePairs; ++i) std::free(std::malloc(100));
 }
 
 void* late_thread(void*) {
@@ -115,9 +117,9 @@ int main() {
   pthread_join(thread, nullptr);
   get_stats(&after);
 
-  // The main thread, the thread that made its only operation in the last
+  // The main thread, the thread that made its only operations in the last
   // round, and the thread that took its stack are all counted.
-  constexpr int64_t kExpected = kMainPairs + 1 + kPairs;
+  constexpr int64_t kExpected = kMainPairs + kLatePairs + kPairs;
   check(near(static_cast<int64_t>(after.allocs - before.allocs), kExpected,
              kSlackCount),
         "allocs of all threads");

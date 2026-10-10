@@ -3,7 +3,8 @@
 /**
  * @file fork_child.cpp
  * @brief Check that a forked child can start a thread and read the counters
- * while the parent has other threads alive at the time of the fork.
+ * while the parent has other threads alive at the time of the fork, and that
+ * the child holds the counts of its parent once.
  */
 
 #include "heapline.h"
@@ -14,6 +15,7 @@
 #include <unistd.h>
 
 #include <csignal>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 
@@ -23,6 +25,7 @@ using GetStatsFn = void (*)(heapline_stats*);
 
 constexpr int kParentThreads     = 4;
 constexpr int kPairs             = 100;
+constexpr uint64_t kSlackCount   = 16;
 constexpr unsigned kAlarmSeconds = 5;
 
 pthread_barrier_t ready;
@@ -57,8 +60,10 @@ int run_child(GetStatsFn get_stats, const heapline_stats& parent) {
   heapline_stats before{};
   heapline_stats after{};
   get_stats(&before);
-  if (before.allocs < parent.allocs || before.frees < parent.frees) {
-    std::fprintf(stderr, "FAIL: child keeps the counts of its parent\n");
+  if (before.allocs < parent.allocs || before.frees < parent.frees ||
+      before.allocs > parent.allocs + kSlackCount ||
+      before.frees > parent.frees + kSlackCount) {
+    std::fprintf(stderr, "FAIL: child holds the counts of its parent once\n");
     return 1;
   }
   pthread_t thread;
