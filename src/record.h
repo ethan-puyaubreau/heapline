@@ -36,6 +36,27 @@ long find_rank(EnvLookup lookup);
 void expand_path(char* buf, size_t len, const char* pattern, long pid,
                  long rank, const char* host);
 
+/**
+ * @brief Memory figures of the process read from /proc/self/status, in
+ * bytes, or -1 when absent.
+ */
+struct ProcStatus {
+  int64_t vmhwm_bytes = -1;  ///< Peak resident set size.
+  int64_t vmrss_bytes = -1;  ///< Current resident set size.
+};
+
+/**
+ * @brief Parse the VmHWM and VmRSS lines of a /proc/self/status text.
+ */
+ProcStatus parse_status(const char* text);
+
+/**
+ * @brief Read /proc/self/status into a stack buffer and parse it.
+ *
+ * Does not allocate, so it can run from the library destructor.
+ */
+ProcStatus read_status();
+
 }  // namespace heapline
 
 #endif

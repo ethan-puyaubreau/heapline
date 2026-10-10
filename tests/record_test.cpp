@@ -72,10 +72,32 @@ void test_expand_path() {
   check(std::strcmp(buf, "abcdefg") == 0, "truncated to len - 1");
 }
 
+void test_status() {
+  const char* sample =
+      "Name:\tapp\n"
+      "VmPeak:\t  999999 kB\n"
+      "VmHWM:\t    2048 kB\n"
+      "VmRSS:\t    1024 kB\n"
+      "Threads:\t1\n";
+  heapline::ProcStatus parsed = heapline::parse_status(sample);
+  check(parsed.vmhwm_bytes == 2048 * 1024, "VmHWM in bytes");
+  check(parsed.vmrss_bytes == 1024 * 1024, "VmRSS in bytes");
+
+  heapline::ProcStatus missing = heapline::parse_status("VmHWMX:\t1 kB\n");
+  check(missing.vmhwm_bytes == -1, "VmHWMX is not VmHWM");
+  check(missing.vmrss_bytes == -1, "missing VmRSS gives -1");
+
+  heapline::ProcStatus own = heapline::read_status();
+  check(own.vmhwm_bytes > 0, "own VmHWM is read");
+  check(own.vmrss_bytes > 0, "own VmRSS is read");
+  check(own.vmhwm_bytes >= own.vmrss_bytes, "VmHWM covers VmRSS");
+}
+
 }  // namespace
 
 int main() {
   test_find_rank();
   test_expand_path();
+  test_status();
   return failures == 0 ? 0 : 1;
 }
