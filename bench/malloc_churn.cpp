@@ -41,7 +41,7 @@ void churn(long iterations, unsigned seed) {
 
 int main(int argc, char** argv) {
   const int threads     = argc > 1 ? std::atoi(argv[1]) : 4;
-  const long iterations = argc > 2 ? std::atol(argv[2]) : 2000000;
+  const long iterations = argc > 2 ? std::atol(argv[2]) : 10000000;
   if (threads <= 0 || iterations <= 0) {
     std::fprintf(stderr,
                  "usage: malloc_churn [THREADS] [ITERATIONS_PER_THREAD]\n");
