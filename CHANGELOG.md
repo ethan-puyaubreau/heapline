@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-11
+
+### Added
+
+- Tests `library_dependencies`, `peak_threads_bound` and
+  `peak_threads_monotonic`.
+- The `HEAPLINE_STATIC_RUNTIME` option links `heapline-report` with libstdc++
+  and libgcc statically. It is off by default, and the release archive turns
+  it on.
+
+### Changed
+
+- The release archive is built on Rocky Linux 8 and checked in CI:
+  `libheapline.so` needs only the C library and nothing newer than glibc 2.17,
+  so it loads on RHEL, Rocky and Alma 8 and later. Earlier archives, built on
+  Ubuntu 24.04, need glibc 2.34 (0.1.0 and 0.2.0) or glibc 2.38 (0.3.0 and
+  0.4.0) and libstdc++; on older systems build those versions from source.
+- The library is compiled without exceptions and run-time type information
+  and no longer depends on libstdc++ or libgcc_s.
+
+### Fixed
+
+- `heapline_get_stats` no longer reports a lower peak than on a previous call.
+
 ## [0.4.0] - 2026-10-10
 
 ### Added
@@ -88,7 +112,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI on GCC and Clang with a clang-format check, and release archives built on
   version tags.
 
-[Unreleased]: https://github.com/ethan-puyaubreau/heapline/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ethan-puyaubreau/heapline/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/ethan-puyaubreau/heapline/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ethan-puyaubreau/heapline/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ethan-puyaubreau/heapline/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ethan-puyaubreau/heapline/compare/v0.1.0...v0.2.0
