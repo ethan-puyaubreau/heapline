@@ -15,9 +15,14 @@ add_library(heapline SHARED src/heapline.cpp src/record.cpp)
 target_include_directories(heapline PUBLIC include PRIVATE src)
 target_link_libraries(heapline PRIVATE ${CMAKE_DL_LIBS})
 
+add_executable(heapline-report tools/heapline-report.cpp)
+target_compile_definitions(heapline-report
+                           PRIVATE HEAPLINE_VERSION="${PROJECT_VERSION}")
+
 include(GNUInstallDirs)
 install(TARGETS heapline LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES include/heapline.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(TARGETS heapline-report RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 if(HEAPLINE_ENABLE_TESTS)
   enable_testing()

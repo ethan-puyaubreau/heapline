@@ -1,0 +1,21 @@
+heapline-report: 4 ranks on 2 nodes, longest process 12.0 s
+
+Peak heap
+  max        400.0 MiB, rank 3 at 4.5 s
+  median     250.0 MiB
+  min        100.0 MiB
+  imbalance  1.60 (max / mean)
+
+Per node, sum of VmHWM (an upper bound to compare with --mem)
+  node-a  2 ranks  340.0 MiB
+  node-b  2 ranks  780.0 MiB
+
+Ranks by peak heap (4 of 4)
+  rank  host     peak heap  at (s)       VmHWM  heap / VmHWM
+     3  node-b   400.0 MiB     4.5   450.0 MiB  0.89
+     2  node-b   300.0 MiB     3.0   330.0 MiB  0.91
+     1  node-a   200.0 MiB     2.0   220.0 MiB  0.91
+     0  node-a   100.0 MiB     1.0   120.0 MiB  0.83
+
+Slurm: sacct MaxRSS is a per-task maximum sampled during the job. Compare it
+with the largest VmHWM above, 450.0 MiB; a short peak can fall between samples.

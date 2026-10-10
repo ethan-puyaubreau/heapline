@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Slurm job id, the time of the heap peak and the peak resident set size
   (`VmHWM`) of the process.
 - `%r` and `%h` in `HEAPLINE_OUTPUT` expand to the rank and the host name.
+- `heapline-report` summarizes the records of a job: peak heap per rank and
+  its time, median, minimum and imbalance, and the sum of `VmHWM` per node.
 
 ### Changed
 

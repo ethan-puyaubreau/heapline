@@ -41,3 +41,22 @@ add_test(NAME peak_time_late
 add_executable(record_test record_test.cpp ${PROJECT_SOURCE_DIR}/src/record.cpp)
 target_include_directories(record_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 add_test(NAME record COMMAND record_test)
+
+set(report $<TARGET_FILE:heapline-report>)
+set(data ${CMAKE_CURRENT_SOURCE_DIR}/data)
+add_test(NAME report_job
+         COMMAND sh -c "\"$1\" \"$2/job\" | diff -u \"$2/job.expected\" -"
+                 sh ${report} ${data})
+add_test(NAME report_bad_version
+         COMMAND sh -c "! \"$1\" \"$2/bad-version\" 2>bad_version.err \
+           && grep -q 'unsupported format version 2' bad_version.err \
+           && grep -q 'no valid record' bad_version.err"
+                 sh ${report} ${data})
+add_test(NAME report_truncated
+         COMMAND sh -c "\"$1\" \"$2/truncated\" >/dev/null 2>truncated.err \
+           && grep -q 'missing values' truncated.err"
+                 sh ${report} ${data})
+add_test(NAME report_missing_rank
+         COMMAND sh -c "\"$1\" \"$2/missing-rank\" >/dev/null \
+           2>missing_rank.err && grep -q 'missing ranks: 2 ' missing_rank.err"
+                 sh ${report} ${data})

@@ -1,0 +1,3 @@
+# heapline 1
+rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,vmrss_at_exit_bytes
+3,node-b,1004,4242,12.000,4000,3990,419430400,4.500,1024,471859200,8388608

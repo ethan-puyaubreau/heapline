@@ -49,6 +49,16 @@ The rank is read from `SLURM_PROCID`, `OMPI_COMM_WORLD_RANK`, `PMI_RANK`,
 `PMIX_RANK` or `MV2_COMM_WORLD_RANK`, in this order, and is -1 outside MPI.
 If the file cannot be opened, the record goes to stderr.
 
+## Job report
+
+`heapline-report` merges the records of a job and prints the peak heap of
+each rank, when it was reached, the imbalance between ranks and, per node, the
+sum of `VmHWM` to compare with the `--mem` request of a Slurm job:
+
+```
+heapline-report records/
+```
+
 ## How it works
 
 - `malloc`, `calloc`, `realloc`, `free`, `posix_memalign`, `aligned_alloc`,
