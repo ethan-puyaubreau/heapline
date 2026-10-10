@@ -1,0 +1,102 @@
+"""Render the overhead history of heapline for the documentation.
+
+Reads the history.jsonl of the bench-data branch and writes
+docs/_generated/performance.md, plus performance.svg when there is data.
+"""
+
+import json
+import pathlib
+import sys
+
+OUT = pathlib.Path(__file__).parent / "_generated"
+WIDTH, HEIGHT = 640, 260
+LEFT, RIGHT, TOP, BOTTOM = 56, 16, 16, 40
+
+
+def load(path):
+    history = pathlib.Path(path) if path else None
+    if history is None or not history.exists():
+        return []
+    lines = history.read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+def svg(points):
+    values = [100 * p["overhead"] for p in points]
+    low, high = min(0.0, min(values)), max(values)
+    if high - low < 1e-9:
+        high = low + 1
+
+    def x(i):
+        return LEFT + (WIDTH - LEFT - RIGHT) * i / max(1, len(values) - 1)
+
+    def y(v):
+        return TOP + (HEIGHT - TOP - BOTTOM) * (1 - (v - low) / (high - low))
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}" '
+        'font-family="Charter, Cambria, serif" font-size="12">',
+        f'<rect width="{WIDTH}" height="{HEIGHT}" fill="#fff"/>',
+    ]
+    for k in range(5):
+        v = low + (high - low) * k / 4
+        parts.append(
+            f'<line x1="{LEFT}" x2="{WIDTH - RIGHT}" y1="{y(v):.1f}" '
+            f'y2="{y(v):.1f}" stroke="#ccc" stroke-dasharray="2 3"/>'
+        )
+        parts.append(
+            f'<text x="{LEFT - 6}" y="{y(v) + 4:.1f}" text-anchor="end">'
+            f"{v:.1f}</text>"
+        )
+    line = " ".join(f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(values))
+    parts.append(
+        f'<polyline points="{line}" fill="none" stroke="#000" stroke-width="1.5"/>'
+    )
+    parts.append(
+        f'<line x1="{LEFT}" x2="{LEFT}" y1="{TOP}" y2="{HEIGHT - BOTTOM}" stroke="#000"/>'
+    )
+    parts.append(
+        f'<line x1="{LEFT}" x2="{WIDTH - RIGHT}" y1="{HEIGHT - BOTTOM}" '
+        f'y2="{HEIGHT - BOTTOM}" stroke="#000"/>'
+    )
+    parts.append(
+        f'<text x="{(LEFT + WIDTH - RIGHT) / 2:.0f}" y="{HEIGHT - 10}" '
+        'text-anchor="middle">Commits on main, oldest to newest</text>'
+    )
+    parts.append(
+        f'<text transform="translate(14 {(TOP + HEIGHT - BOTTOM) / 2:.0f}) '
+        'rotate(-90)" text-anchor="middle">Overhead (%)</text>'
+    )
+    parts.append("</svg>")
+    return "\n".join(parts) + "\n"
+
+
+def table(points):
+    rows = [
+        "| Commit | Date | Overhead | Allocations/s with heapline | Runner CPU |",
+        "|---|---|---:|---:|---|",
+    ]
+    for p in reversed(points[-20:]):
+        rows.append(
+            f"| `{p['commit']}` | {p['date'][:10]} | {100 * p['overhead']:.1f}% "
+            f"| {p['allocs_per_s']:.3g} | {p['cpu']} |"
+        )
+    return "\n".join(rows) + "\n"
+
+
+def main(path):
+    points = load(path)
+    OUT.mkdir(exist_ok=True)
+    if not points:
+        (OUT / "performance.md").write_text("No measurement yet.\n", encoding="utf-8")
+        return
+    (OUT / "performance.svg").write_text(svg(points), encoding="utf-8")
+    (OUT / "performance.md").write_text(
+        "![Overhead of heapline on malloc_churn, per commit](performance.svg)\n\n"
+        + table(points),
+        encoding="utf-8",
+    )
+
+
+if __name__ == "__main__":
+    main(sys.argv[1] if len(sys.argv) > 1 else "")

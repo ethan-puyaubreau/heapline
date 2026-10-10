@@ -13,7 +13,7 @@ version = release
 
 extensions = ["myst_parser"]
 source_suffix = {".md": "markdown"}
-exclude_patterns = ["_build"]
+exclude_patterns = ["_build", "_generated"]
 myst_heading_anchors = 3
 
 html_theme = "furo"

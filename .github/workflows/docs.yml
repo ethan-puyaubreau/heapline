@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+  workflow_run:
+    workflows: [ Benchmark ]
+    types: [ completed ]
+    branches: [ main ]
 
 permissions:
   contents: read
@@ -21,6 +25,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,6 +35,18 @@ jobs:
 
       - name: Install Sphinx
         run: pip install -r docs/requirements.txt
+
+      - name: Check the performance page generator
+        run: |
+          python3 docs/perf_history.py tests/data/history-sample.jsonl
+          test -s docs/_generated/performance.svg
+
+      - name: Render the performance history
+        run: |
+          git fetch origin bench-data || true
+          git show origin/bench-data:history.jsonl > history.jsonl 2>/dev/null || rm -f history.jsonl
+          rm -rf docs/_generated
+          python3 docs/perf_history.py history.jsonl
 
       - name: Build
         run: sphinx-build -W --keep-going -b html docs docs/_build/html
