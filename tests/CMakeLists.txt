@@ -40,17 +40,20 @@ add_test(NAME stale_thread
                  $<TARGET_FILE:heapline> $<TARGET_FILE:stale_thread>)
 set_tests_properties(stale_thread PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
 
-# With several threads, the peak stays within its documented bound. The test
-# reserves 1 GiB of address space, and skips itself when it cannot.
+# With several threads, the peak stays within its documented bound and never
+# decreases. The tests reserve 1 GiB of address space, and skip themselves when
+# they cannot.
 add_executable(peak_threads peak_threads.cpp)
 target_include_directories(peak_threads PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(peak_threads PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
 target_compile_options(peak_threads PRIVATE -fno-builtin)
-add_test(NAME peak_threads COMMAND peak_threads)
-set_tests_properties(peak_threads PROPERTIES
-                     ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>
-                     TIMEOUT 30
-                     SKIP_RETURN_CODE 77)
+foreach(mode bound monotonic)
+  add_test(NAME peak_threads_${mode} COMMAND peak_threads ${mode})
+  set_tests_properties(peak_threads_${mode} PROPERTIES
+                       ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>
+                       TIMEOUT 30
+                       SKIP_RETURN_CODE 77)
+endforeach()
 
 # The library depends on the C library only, so it loads without libstdc++.
 add_test(NAME library_dependencies

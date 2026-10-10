@@ -2,12 +2,22 @@
 
 /**
  * @file peak_threads.cpp
- * @brief Check that the heap peak of several threads stays within the bound
- * of the documentation of the true peak, which is known here.
+ * @brief Check the heap peak of several threads, in two modes. Usage:
+ * peak_threads bound|monotonic.
  *
- * Eight threads each hold a 4 MiB block at the same time, on top of a 1 GiB
- * block held by the main thread, then release them and exit. A library that
- * lets threads hold back too much would miss the 32 MiB of the workers.
+ * Eight threads each hold a block at the same time, on top of a 1 GiB block
+ * held by the main thread, then release them and exit.
+ *
+ * bound: the blocks are 120 KiB, above the 16 KiB that a thread may hold back
+ * with nine threads, so they are published. Nothing is read while they are
+ * held, and the peak read at the end must stay within the documented bound of
+ * the true peak, which is known here. A library that lets each thread hold
+ * back 82 KiB or more would miss more than that bound.
+ *
+ * monotonic: the blocks are 8 KiB, so the threads hold them back. The main
+ * thread reads the counters while they are held, and again after the threads
+ * are gone: the second peak must not be lower than the first, and the first
+ * must show the held bytes.
  */
 
 #include "heapline.h"
@@ -19,6 +29,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -27,8 +38,14 @@ using GetStatsFn = void (*)(heapline_stats*);
 constexpr int kThreads = 8;
 constexpr int kSkip    = 77;
 
-constexpr int64_t kBase  = int64_t{1} << 30;
-constexpr int64_t kBlock = int64_t{4} << 20;
+constexpr int64_t kBase           = int64_t{1} << 30;
+constexpr int64_t kBoundBlock     = int64_t{120} << 10;
+constexpr int64_t kMonotonicBlock = int64_t{8} << 10;
+
+/**
+ * @brief Size of the block of each worker, set before the workers start.
+ */
+int64_t block_size = kBoundBlock;
 
 /**
  * @brief Allowance for the allocations glibc makes itself when it creates a
@@ -55,7 +72,7 @@ void check(bool cond, const char* what) {
  */
 void* worker(void* arg) {
   auto* size  = static_cast<int64_t*>(arg);
-  void* block = std::malloc(kBlock);
+  void* block = std::malloc(static_cast<size_t>(block_size));
   *size       = block ? static_cast<int64_t>(malloc_usable_size(block)) : 0;
   pthread_barrier_wait(&held);
   pthread_barrier_wait(&released);
@@ -65,7 +82,13 @@ void* worker(void* arg) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  const bool monotonic = argc == 2 && std::strcmp(argv[1], "monotonic") == 0;
+  if (!monotonic && !(argc == 2 && std::strcmp(argv[1], "bound") == 0)) {
+    std::fprintf(stderr, "usage: peak_threads bound|monotonic\n");
+    return 2;
+  }
+  block_size = monotonic ? kMonotonicBlock : kBoundBlock;
   auto get_stats =
       reinterpret_cast<GetStatsFn>(dlsym(RTLD_DEFAULT, "heapline_get_stats"));
   if (!get_stats) {
@@ -92,8 +115,11 @@ int main() {
       return 1;
     }
   }
-  // Every worker holds its block between the two barriers; nothing is read.
+  // Every worker holds its block between the two barriers. Only the monotonic
+  // mode reads the counters there.
+  heapline_stats during{};
   pthread_barrier_wait(&held);
+  if (monotonic) get_stats(&during);
   pthread_barrier_wait(&released);
   for (auto& thread : threads) {
     void* result = nullptr;
@@ -108,7 +134,12 @@ int main() {
 
   // Nine threads allocate: (ceil(log2 9) + 1) / 8192 = 5 / 8192 of the peak.
   const int64_t bound = (5 * end.peak_bytes) / 8192;
-  check(end.peak_bytes >= base_live + sum - bound, "peak covers the workers");
+  if (monotonic) {
+    check(during.live_bytes >= base_live + sum, "live shows the held bytes");
+    check(end.peak_bytes >= during.peak_bytes, "peak never decreases");
+  } else {
+    check(end.peak_bytes >= base_live + sum - bound, "peak covers the workers");
+  }
   check(end.peak_bytes <= base_live + sum + bound + kSlackBytes,
         "peak does not exceed the workers");
 
