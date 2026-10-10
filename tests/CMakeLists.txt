@@ -16,3 +16,8 @@ add_test(NAME output_file
            && test $(ls summary.[0-9]*.txt | wc -l) -eq 1 \
            && grep -q '^heapline: ' summary.[0-9]*.txt"
                  sh $<TARGET_FILE:heapline> $<TARGET_FILE:alloc_pattern>)
+
+# Pure helpers of the library, tested without preloading it.
+add_executable(record_test record_test.cpp ${PROJECT_SOURCE_DIR}/src/record.cpp)
+target_include_directories(record_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
+add_test(NAME record COMMAND record_test)
