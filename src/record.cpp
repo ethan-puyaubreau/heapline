@@ -62,6 +62,17 @@ void sanitize(char* out, size_t len, const char* in) {
   out[i] = '\0';
 }
 
+/**
+ * @brief Duration in whole milliseconds, rounded half up. Negative and NaN
+ * values give 0.
+ *
+ * Printing integers keeps the output independent of the LC_NUMERIC locale of
+ * the host program, which may use a comma as decimal separator.
+ */
+long long to_millis(double seconds) {
+  return seconds > 0 ? static_cast<long long>(seconds * 1000.0 + 0.5) : 0;
+}
+
 }  // namespace
 
 long find_rank(EnvLookup lookup) {
@@ -122,13 +133,16 @@ int format_record(char* buf, size_t len, const Record& record) {
   char job[64];
   sanitize(host, sizeof(host), record.host);
   sanitize(job, sizeof(job), record.job);
-  int n = std::snprintf(
-      buf, len, "%s%ld,%s,%ld,%s,%.3f,%llu,%llu,%lld,%.3f,%lld,%lld,%lld\n",
-      kRecordHeader, record.rank, host, record.pid, job, record.elapsed_s,
-      static_cast<unsigned long long>(record.allocs),
+  const long long elapsed_ms = to_millis(record.elapsed_s);
+  const long long peak_ms    = to_millis(record.peak_heap_time_s);
+  int n                      = std::snprintf(
+      buf, len,
+      "%s%ld,%s,%ld,%s,%lld.%03lld,%llu,%llu,%lld,%lld.%03lld,%lld,%lld,%lld\n",
+      kRecordHeader, record.rank, host, record.pid, job, elapsed_ms / 1000,
+      elapsed_ms % 1000, static_cast<unsigned long long>(record.allocs),
       static_cast<unsigned long long>(record.frees),
-      static_cast<long long>(record.peak_heap_bytes), record.peak_heap_time_s,
-      static_cast<long long>(record.live_heap_at_exit_bytes),
+      static_cast<long long>(record.peak_heap_bytes), peak_ms / 1000,
+      peak_ms % 1000, static_cast<long long>(record.live_heap_at_exit_bytes),
       static_cast<long long>(record.vmhwm_bytes),
       static_cast<long long>(record.vmrss_at_exit_bytes));
   return n < 0 || static_cast<size_t>(n) >= len ? -1 : n;

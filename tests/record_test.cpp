@@ -2,6 +2,7 @@
 
 #include "record.h"
 
+#include <clocale>
 #include <cstdio>
 #include <cstring>
 
@@ -137,6 +138,46 @@ void test_format_record() {
         "too small a buffer gives -1");
 }
 
+void test_format_record_times() {
+  heapline::Record record;
+  char buf[1024];
+  record.elapsed_s = 1.0005;
+  heapline::format_record(buf, sizeof(buf), record);
+  check(std::strstr(buf, "\n-1,,0,,1.001,0,0,0,0.000,0,-1,-1\n") != nullptr,
+        "elapsed_s is rounded half up to milliseconds");
+
+  record.elapsed_s = 0;
+  heapline::format_record(buf, sizeof(buf), record);
+  check(std::strstr(buf, "\n-1,,0,,0.000,0,0,0,0.000,0,-1,-1\n") != nullptr,
+        "zero time prints 0.000");
+
+  record.elapsed_s = -2;
+  heapline::format_record(buf, sizeof(buf), record);
+  check(std::strstr(buf, "\n-1,,0,,0.000,0,0,0,0.000,0,-1,-1\n") != nullptr,
+        "negative time is clamped to 0.000");
+}
+
+void test_format_record_locale() {
+  if (!std::setlocale(LC_NUMERIC, "fr_FR.UTF-8") &&
+      !std::setlocale(LC_NUMERIC, "de_DE.UTF-8")) {
+    std::fprintf(stderr,
+                 "SKIP: no comma locale installed, locale check not run\n");
+    return;
+  }
+  char probe[16];
+  std::snprintf(probe, sizeof(probe), "%.1f", 1.5);
+  check(std::strchr(probe, ',') != nullptr, "the comma locale is active");
+
+  heapline::Record record;
+  record.elapsed_s        = 12.5;
+  record.peak_heap_time_s = 4.25;
+  char buf[1024];
+  heapline::format_record(buf, sizeof(buf), record);
+  check(std::strstr(buf, "\n-1,,0,,12.500,0,0,0,4.250,0,-1,-1\n") != nullptr,
+        "times keep the dot under a comma locale");
+  std::setlocale(LC_NUMERIC, "C");
+}
+
 }  // namespace
 
 int main() {
@@ -144,5 +185,7 @@ int main() {
   test_expand_path();
   test_status();
   test_format_record();
+  test_format_record_times();
+  test_format_record_locale();
   return failures == 0 ? 0 : 1;
 }
