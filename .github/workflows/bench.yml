@@ -1,0 +1,49 @@
+name: Benchmark
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bench-data
+  cancel-in-progress: false
+
+jobs:
+  overhead:
+    name: Measure overhead
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DHEAPLINE_ENABLE_BENCH=ON -DHEAPLINE_ENABLE_TESTS=OFF
+          cmake --build build --parallel
+
+      - name: Measure
+        run: sh bench/run_overhead.sh build/bench/malloc_churn build/libheapline.so 10 | tee point.json
+
+      - name: Append to bench-data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin bench-data; then
+            git worktree add data origin/bench-data
+            git -C data switch -c bench-data
+          else
+            git worktree add --detach data
+            git -C data switch --orphan bench-data
+          fi
+          cat point.json >> data/history.jsonl
+          python3 bench/check_regression.py data/history.jsonl
+          git -C data add history.jsonl
+          git -C data commit -m "bench: add ${GITHUB_SHA::7}"
+          git -C data push origin bench-data
