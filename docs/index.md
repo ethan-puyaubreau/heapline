@@ -13,9 +13,9 @@ on the allocation path and allocates nothing there. Its cost is paid per
 allocation. In a process that holds its data, as a simulation does, four
 threads that allocate continuously add about 20% to the run time, and so does
 a single thread. A small program whose threads do nothing but allocate adds
-the most, about 170%. See [Performance history](performance.md). When you need every allocation with
-its call stack, use heaptrack or Valgrind's massif instead (see
-[Limitations and alternatives](limitations.md)).
+the most, about 170%. See [Performance history](performance.md). When you
+need every allocation with its call stack, use heaptrack or Valgrind's massif
+instead (see [Limitations and alternatives](limitations.md)).
 
 ```{toctree}
 :maxdepth: 1

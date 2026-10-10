@@ -12,10 +12,14 @@ heapline must stay cheap enough to leave on in production runs. Each push to
 | `python` | `python3 bench/python_churn.py` | A real program: the Python interpreter |
 
 `malloc_churn` keeps 64 blocks per thread and replaces them in turn, with a
-pseudo-random size. In a small heap, the threads publish almost every change, which is
-what keeps `churn-4t` slow; when the process holds more memory, as in
-`resident-4t`, they publish in batches. Points measured before scenarios
-existed belong to `churn-4t`.
+pseudo-random size. In a small heap, the threads publish almost every change,
+which is what keeps `churn-4t` slow; when the process holds more memory, as in
+`resident-4t`, they publish in batches. `large-4t` also publishes on every
+operation, but each of its allocations costs more, so the shared counter is a
+smaller part of the time. Points measured before scenarios existed belong to
+`churn-4t`. Points of `churn-4t` measured before 0.4.0 were timed by the
+benchmark itself; later points time the whole command, which adds a few
+milliseconds.
 
 The figure is the relative overhead measured within one CI job: the median
 time of ten runs with heapline, divided by the median of ten runs without it,

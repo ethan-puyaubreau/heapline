@@ -22,11 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to about 170%.
 - Each thread counts its allocations in its own counters and publishes its
   bytes in batches, so threads no longer contend for the shared counters.
-  When several threads allocate, the heap peak may differ from the true peak
-  by up to (ceil(log2 N) + 1)/8192 of it for N threads (0.037% with 4
-  threads, 0.085% with 64); it stays exact as long as only one thread has
-  allocated, and the other counters stay exact, threads still running at exit
-  included.
+  When several threads allocate or release memory, the heap peak may differ
+  from the true peak by up to (ceil(log2 N) + 1)/8192 of it for N threads
+  (0.037% with 4 threads, 0.085% with 64); it stays exact as long as only one
+  thread has allocated or released memory. In both cases, blocks that other
+  threads are allocating or releasing at that instant may be missing. The
+  other counters stay exact, threads still running at exit included. Folding
+  in the bytes that a thread held back does not move the time of the peak, and
+  the peak is never below the live bytes.
+- `heapline_get_stats` takes a mutex, so it must not be called from a signal
+  handler or a fork handler.
+- heapline must be loaded at startup with `LD_PRELOAD`; loading it with
+  `dlopen` is not supported.
 - The library links with the threads library.
 
 ## [0.3.0] - 2026-10-10

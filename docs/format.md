@@ -34,18 +34,20 @@ changing the meaning of one raises the version.
 | `vmhwm_bytes` | bytes | Peak resident set size of the process (`VmHWM`), -1 if unknown |
 | `vmrss_at_exit_bytes` | bytes | Resident set size at exit (`VmRSS`), -1 if unknown |
 
-The peak is exact as long as only one thread of the process has allocated.
-When several threads allocate, each thread counts in its own counters and
-publishes its changes in batches, so that threads do not wait for each other.
-The peak may then differ from the true peak by up to (ceil(log2 N) + 1)/8192
-of it, N being the number of threads that have allocated: 0.037% with 4
-threads, 0.061% with 16, 0.085% with 64, or 3.5 MiB for a 4 GiB peak with 64
-threads.
-`allocs`, `frees` and `live_heap_at_exit_bytes` count every thread exactly,
-threads still running at exit included, except for operations in progress at
-that instant. The peak and its time are stored separately: under concurrent
-allocation, the time may belong to a slightly different peak than the one
-reported.
+The peak is exact as long as only one thread of the process has allocated or
+released memory. When several threads do, each thread counts in its own
+counters and publishes its changes in batches, so that threads do not wait for
+each other. The peak may then differ from the true peak by up to
+(ceil(log2 N) + 1)/8192 of it, N being the number of threads that have
+allocated or released memory: 0.037% with 4 threads, 0.061% with 16, 0.085%
+with 64, or 3.5 MiB for a 4 GiB peak with 64 threads. In both cases, as
+before, blocks that other threads are allocating or releasing at that instant
+may be missing. `allocs`, `frees` and `live_heap_at_exit_bytes` count every
+thread exactly, threads still running at exit included, except for operations
+in progress at that instant. The peak and its time are stored separately:
+under concurrent allocation, the time may belong to a slightly different peak
+than the one reported, and with several threads it may be the time of a moment
+when the heap was already within that bound of the peak.
 
 ## File names
 
