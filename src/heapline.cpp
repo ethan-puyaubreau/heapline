@@ -228,15 +228,13 @@ int shift_for(int64_t threads) {
 }
 
 /**
- * @brief Add @p delta to live_bytes and raise the peak if needed.
+ * @brief Raise the peak to @p live if it is lower, and return the peak.
  *
  * The time of the peak is stored only when @p stamp is set. Bytes folded in
  * from the counters of a thread were held since an earlier moment that is not
  * known, so they raise the peak without moving its time.
  */
-void publish(int64_t delta, bool stamp) {
-  int64_t live =
-      shared.live_bytes.fetch_add(delta, std::memory_order_relaxed) + delta;
+int64_t raise_peak(int64_t live, bool stamp) {
   int64_t peak = shared.peak_bytes.load(std::memory_order_relaxed);
   while (live > peak) {
     if (shared.peak_bytes.compare_exchange_weak(peak, live,
@@ -244,9 +242,20 @@ void publish(int64_t delta, bool stamp) {
       if (stamp)
         shared.peak_time_ns.store(now_ns(CLOCK_MONOTONIC_COARSE),
                                   std::memory_order_relaxed);
-      break;
+      return live;
     }
   }
+  return peak;
+}
+
+/**
+ * @brief Add @p delta to live_bytes and raise the peak if needed, see
+ * raise_peak() for @p stamp.
+ */
+void publish(int64_t delta, bool stamp) {
+  raise_peak(
+      shared.live_bytes.fetch_add(delta, std::memory_order_relaxed) + delta,
+      stamp);
 }
 
 /**
@@ -415,7 +424,12 @@ void record_free(void* ptr, size_t size) {
  * @brief Exact totals: the globals plus the counters of the threads still
  * registered. An operation in progress in another thread may be missing. The
  * peak is raised to the live bytes, which include the bytes held back by the
- * threads: the true peak is not below the true live bytes.
+ * threads: the true peak is not below the true live bytes. The raised value is
+ * stored, without a time, so that a later call never reports a lower peak even
+ * if those threads release the bytes without publishing them. The live total
+ * is read thread by thread, so the stored peak can exceed the true peak by up
+ * to the bound documented in format.md: the same approximation as before, now
+ * kept for the later calls.
  */
 heapline_stats totals() {
   heapline_stats stats{};
@@ -430,8 +444,7 @@ heapline_stats totals() {
     stats.live_bytes += counters->pending.load(std::memory_order_relaxed);
   }
   pthread_mutex_unlock(&registry_mutex);
-  stats.peak_bytes = std::max(shared.peak_bytes.load(std::memory_order_relaxed),
-                              stats.live_bytes);
+  stats.peak_bytes = raise_peak(stats.live_bytes, false);
   return stats;
 }
 
