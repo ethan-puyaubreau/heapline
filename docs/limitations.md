@@ -7,7 +7,7 @@
   heapline.
 - Sizes are usable sizes, slightly above the requested sizes.
 - With several threads, the peak may differ from the true peak by a small
-  fraction of it, 0.073% with 64 threads, see [Output format](format.md).
+  fraction of it, 0.085% with 64 threads, see [Output format](format.md).
   heapline must be loaded at startup with `LD_PRELOAD`; loading it later with
   `dlopen` is not supported.
 - Memory obtained with `mmap` directly, or allocated on a GPU, is not heap

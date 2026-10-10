@@ -78,7 +78,7 @@ std::atomic<int64_t> peak_time_ns{0};
 
 /**
  * @brief A registered thread holds back at most peak_bytes >> limit_shift
- * bytes, with the limit_shift it last read, see shift_for().
+ * bytes, for the limit_shift it last read. See shift_for() for the total.
  */
 alignas(64) std::atomic<int> limit_shift{63};
 
@@ -189,12 +189,11 @@ void resolve() {
 /**
  * @brief limit_shift for @p threads registered threads.
  *
- * A single thread holds nothing back, so its peak is exact. With n threads,
- * each holds back at most 1/(4096 * 2^ceil(log2 n)) of the peak, for the n it
- * last saw. All threads together hold back at most 1/4096 of it once each has
- * operated since the last registration, and at most ceil(log2 N)/8192 in the
- * worst case, for N threads: a thread that went idle keeps what it held under
- * a smaller n.
+ * A single thread holds nothing back, so its peak is exact. Each thread holds
+ * back at most 1/(4096 * 2^ceil(log2 n)) of the peak, for the n it last saw.
+ * Once every thread has operated since the last registration, the total is at
+ * most 1/4096. In the worst case it is (ceil(log2 N) + 1)/8192, because the
+ * j-th live thread in registration order saw at least j threads.
  */
 int shift_for(int64_t threads) {
   if (threads <= 1) return 63;
