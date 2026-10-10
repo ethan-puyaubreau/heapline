@@ -6,9 +6,10 @@
 - Programs that use another allocator, such as jemalloc or tcmalloc, bypass
   heapline.
 - Sizes are usable sizes, slightly above the requested sizes.
-- With several threads, the peak may differ from the true peak by up to
-  1/4096 of it, see [Output format](format.md). heapline must be loaded at
-  startup with `LD_PRELOAD`; loading it later with `dlopen` is not supported.
+- With several threads, the peak may differ from the true peak by a small
+  fraction of it, 0.073% with 64 threads, see [Output format](format.md).
+  heapline must be loaded at startup with `LD_PRELOAD`; loading it later with
+  `dlopen` is not supported.
 - Memory obtained with `mmap` directly, or allocated on a GPU, is not heap
   and is not counted.
 - A process killed by a signal writes no record. `heapline-report` lists it as

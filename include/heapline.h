@@ -23,10 +23,11 @@ struct heapline_stats {
  * @brief Copy the current counters into @p stats.
  *
  * allocs, frees and live_bytes count every thread, live or exited, except
- * for operations in progress in other threads. peak_bytes is exact while a
- * single thread allocates. When several threads do, they publish their
- * changes in batches, and peak_bytes may differ from the true peak by up to
- * 1/4096 of it.
+ * for operations in progress in other threads. peak_bytes is exact as long
+ * as only one thread of the process has allocated. When several threads have,
+ * they publish their changes in batches, and peak_bytes may differ from the
+ * true peak by up to ceil(log2 N)/8192 of it for N threads. Takes a mutex,
+ * so it must not be called from a signal handler.
  *
  * The library is usually preloaded rather than linked, so callers look this
  * symbol up with dlsym(RTLD_DEFAULT, "heapline_get_stats").
