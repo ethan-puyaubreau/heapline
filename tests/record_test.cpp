@@ -87,6 +87,19 @@ void test_status() {
   check(missing.vmhwm_bytes == -1, "VmHWMX is not VmHWM");
   check(missing.vmrss_bytes == -1, "missing VmRSS gives -1");
 
+  heapline::ProcStatus truncated = heapline::parse_status("VmHWM:\t    12");
+  check(truncated.vmhwm_bytes == -1, "a truncated VmHWM line gives -1");
+  heapline::ProcStatus non_numeric =
+      heapline::parse_status("VmHWM:\t abc kB\n");
+  check(non_numeric.vmhwm_bytes == -1, "a non-numeric VmHWM gives -1");
+  heapline::ProcStatus negative = heapline::parse_status("VmHWM:\t -5 kB\n");
+  check(negative.vmhwm_bytes == -1, "a negative VmHWM gives -1");
+  heapline::ProcStatus next_line = heapline::parse_status("VmHWM:\n123 kB\n");
+  check(next_line.vmhwm_bytes == -1, "VmHWM does not take the next line");
+  heapline::ProcStatus overflow =
+      heapline::parse_status("VmHWM:\t 99999999999999999999 kB\n");
+  check(overflow.vmhwm_bytes == -1, "an overflowing VmHWM gives -1");
+
   heapline::ProcStatus own = heapline::read_status();
   check(own.vmhwm_bytes > 0, "own VmHWM is read");
   check(own.vmrss_bytes > 0, "own VmRSS is read");

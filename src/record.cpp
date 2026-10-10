@@ -23,17 +23,25 @@ size_t append(char* buf, size_t len, size_t out, const char* text) {
 }
 
 /**
- * @brief Value in bytes of the "<key>: <n> kB" line of @p text, or -1 when
- * the line is absent or malformed.
+ * @brief Value in bytes of the line of @p text that starts with the key
+ * followed by a colon, or -1 when there is no such line.
+ *
+ * The value is a non-negative number followed by " kB" on the same line.
+ * Only spaces and tabs are skipped after the colon, never a newline. A
+ * truncated line, a non-numeric or negative value, and a value that would
+ * overflow int64_t in bytes all give -1.
  */
 int64_t field_bytes(const char* text, const char* key) {
   const size_t key_len = std::strlen(key);
   for (const char* line = text; line && *line;) {
     if (std::strncmp(line, key, key_len) == 0 && line[key_len] == ':') {
-      const char* start  = line + key_len + 1;
+      const char* start = line + key_len + 1;
+      while (*start == ' ' || *start == '\t') ++start;
+      if (*start < '0' || *start > '9') return -1;
       char* end          = nullptr;
       long long kibibyte = std::strtoll(start, &end, 10);
-      return end != start && kibibyte >= 0 ? kibibyte * 1024 : -1;
+      if (std::strncmp(end, " kB", 3) != 0) return -1;
+      return kibibyte > INT64_MAX / 1024 ? -1 : kibibyte * 1024;
     }
     line = std::strchr(line, '\n');
     if (line) ++line;
@@ -83,7 +91,7 @@ ProcStatus parse_status(const char* text) {
 }
 
 ProcStatus read_status() {
-  char buf[4096];
+  char buf[16384];
   int fd = open("/proc/self/status", O_RDONLY | O_CLOEXEC);
   if (fd < 0) return {};
   size_t used = 0;
