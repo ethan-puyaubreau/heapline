@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(HEAPLINE_ENABLE_WERROR "Treat compiler warnings as errors" OFF)
 option(HEAPLINE_ENABLE_TESTS "Build the tests" ON)
 option(HEAPLINE_ENABLE_BENCH "Build the overhead benchmark" OFF)
+option(HEAPLINE_ENABLE_EXAMPLES "Build the examples, which need MPI" OFF)
 
 add_compile_options(-Wall -Wextra -Wpedantic
                     $<$<BOOL:${HEAPLINE_ENABLE_WERROR}>:-Werror>)
@@ -32,4 +33,8 @@ endif()
 
 if(HEAPLINE_ENABLE_BENCH)
   add_subdirectory(bench)
+endif()
+
+if(HEAPLINE_ENABLE_EXAMPLES)
+  add_subdirectory(examples)
 endif()

@@ -1,0 +1,7 @@
+find_package(MPI COMPONENTS CXX)
+if(MPI_CXX_FOUND)
+  add_executable(mpi_imbalance mpi_imbalance.cpp)
+  target_link_libraries(mpi_imbalance PRIVATE MPI::MPI_CXX)
+else()
+  message(STATUS "MPI not found, the examples are not built")
+endif()
