@@ -59,6 +59,10 @@ sum of `VmHWM` to compare with the `--mem` request of a Slurm job:
 heapline-report records/
 ```
 
+`--top N` lists the N ranks with the highest peak (10 by default), `--all`
+lists every rank and `--csv FILE` writes all records, sorted by rank, to one
+file for further analysis.
+
 ## How it works
 
 - `malloc`, `calloc`, `realloc`, `free`, `posix_memalign`, `aligned_alloc`,

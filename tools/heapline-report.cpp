@@ -322,18 +322,69 @@ void print_report(std::vector<Process> processes, const Options& options) {
       max_vmhwm >= 0 ? format_bytes(max_vmhwm).c_str() : "unknown");
 }
 
+/**
+ * @brief Write the records of @p processes, sorted by rank, as one CSV file.
+ */
+bool write_csv(const std::string& path, std::vector<Process> processes) {
+  std::sort(processes.begin(), processes.end(),
+            [](const Process& a, const Process& b) {
+              if (a.rank != b.rank) return a.rank < b.rank;
+              if (a.host != b.host) return a.host < b.host;
+              return a.pid < b.pid;
+            });
+  std::ofstream out(path);
+  if (!out) return false;
+  out << "# heapline 1\n" << kColumns << '\n';
+  for (const auto& p : processes) out << p.values << '\n';
+  return static_cast<bool>(out);
+}
+
 void usage(std::FILE* out) {
   std::fprintf(out,
-               "usage: heapline-report RECORD_OR_DIR...\n"
+               "usage: heapline-report [--top N | --all] [--csv FILE] "
+               "RECORD_OR_DIR...\n"
                "Summarize the records written by heapline through "
-               "HEAPLINE_OUTPUT.\n");
+               "HEAPLINE_OUTPUT.\n"
+               "  --top N     list the N ranks with the highest heap peak "
+               "(default 10)\n"
+               "  --all       list every rank\n"
+               "  --csv FILE  also write all records, sorted by rank, to "
+               "FILE\n"
+               "  --version   print the version and exit\n");
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
   Options options;
-  for (int i = 1; i < argc; ++i) options.inputs.emplace_back(argv[i]);
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--version") {
+      std::printf("heapline-report %s\n", HEAPLINE_VERSION);
+      return 0;
+    }
+    if (arg == "--help" || arg == "-h") {
+      usage(stdout);
+      return 0;
+    }
+    if (arg == "--all") {
+      options.all = true;
+    } else if (arg == "--csv" && i + 1 < argc) {
+      options.csv = argv[++i];
+    } else if (arg == "--top" && i + 1 < argc) {
+      long long top = 0;
+      if (!parse(argv[++i], top) || top <= 0) {
+        warn("--top expects a positive number");
+        return 1;
+      }
+      options.top = static_cast<size_t>(top);
+    } else if (!arg.empty() && arg[0] == '-') {
+      usage(stderr);
+      return 1;
+    } else {
+      options.inputs.push_back(arg);
+    }
+  }
   if (options.inputs.empty()) {
     usage(stderr);
     return 1;
@@ -356,5 +407,9 @@ int main(int argc, char** argv) {
   if (!missing.empty())
     warn("missing ranks: " + join(missing) + " (killed or never started?)");
   print_report(processes, options);
+  if (!options.csv.empty() && !write_csv(options.csv, processes)) {
+    warn("cannot write " + options.csv);
+    return 1;
+  }
   return 0;
 }

@@ -60,3 +60,22 @@ add_test(NAME report_missing_rank
          COMMAND sh -c "\"$1\" \"$2/missing-rank\" >/dev/null \
            2>missing_rank.err && grep -q 'missing ranks: 2 ' missing_rank.err"
                  sh ${report} ${data})
+add_test(NAME report_top
+         COMMAND sh -c "\"$1\" --top 2 \"$2/job\" >top.out \
+           && grep -q '^Ranks by peak heap (2 of 4)$' top.out \
+           && test $(grep -c '^ *[0-9]  node-' top.out) -eq 2"
+                 sh ${report} ${data})
+add_test(NAME report_all
+         COMMAND sh -c "\"$1\" --top 1 --all \"$2/job\" \
+           | grep -q '^Ranks by peak heap (4 of 4)$'"
+                 sh ${report} ${data})
+add_test(NAME report_csv
+         COMMAND sh -c "\"$1\" --csv merged.csv \"$2/job\" >/dev/null \
+           && diff -u \"$2/job.merged.csv\" merged.csv"
+                 sh ${report} ${data})
+add_test(NAME report_version
+         COMMAND sh -c "\"$1\" --version | grep -q '^heapline-report [0-9]'"
+                 sh ${report})
+add_test(NAME report_usage
+         COMMAND sh -c "! \"$1\" 2>usage.err && grep -q '^usage:' usage.err"
+                 sh ${report})
