@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Each thread counts its allocations in its own counters and publishes its
+  bytes in batches, so threads no longer contend for the shared counters.
+  When several threads allocate, the heap peak may differ from the true peak
+  by up to 1/4096 of it; it stays exact for a single thread, and the other
+  counters stay exact, threads still running at exit included.
+- The library links with the threads library.
+
 ## [0.3.0] - 2026-10-10
 
 ### Added

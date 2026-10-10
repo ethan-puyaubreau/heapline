@@ -28,14 +28,20 @@ changing the meaning of one raises the version.
 | `elapsed_s` | s | Time from the loading of the library to the end of the process; written with three decimals and a dot, whatever the locale of the program |
 | `allocs` | | Successful allocations; a `realloc` counts as one |
 | `frees` | | Released blocks; a `realloc` counts as one |
-| `peak_heap_bytes` | bytes | Highest heap in use, in usable sizes |
+| `peak_heap_bytes` | bytes | Highest heap in use, in usable sizes; see the precision below |
 | `peak_heap_time_s` | s | Time of that peak since the loading of the library, read from a coarse clock (one kernel tick, 1 to 10 ms); written with three decimals and a dot, whatever the locale of the program |
 | `live_heap_at_exit_bytes` | bytes | Heap still in use at exit |
 | `vmhwm_bytes` | bytes | Peak resident set size of the process (`VmHWM`), -1 if unknown |
 | `vmrss_at_exit_bytes` | bytes | Resident set size at exit (`VmRSS`), -1 if unknown |
 
-The peak and its time are stored separately: under concurrent allocation,
-the time may belong to a slightly different peak than the one reported.
+The peak is exact while a single thread allocates. When several threads
+allocate, each thread counts in its own counters and publishes its changes
+in batches, so that threads do not wait for each other: the peak may then
+differ from the true peak by up to 1/4096 of it, 1 MiB for a 4 GiB peak.
+`allocs`, `frees` and `live_heap_at_exit_bytes` count every thread exactly,
+including threads still running at exit. The peak and its time are stored
+separately: under concurrent allocation, the time may belong to a slightly
+different peak than the one reported.
 
 ## File names
 
