@@ -49,7 +49,10 @@ mpirun -n 4 env LD_PRELOAD=$PWD/build/libheapline.so HEAPLINE_OUTPUT=$PWD/record
 ```
 
 `env` sets the variables in each rank only, not in `mpirun` itself. `%h` and
-`%r` give each rank its own file.
+`%r` give each rank its own file. Keep `env` directly in front of the program:
+a wrapper script or `/usr/bin/time` between them would be preloaded too, and
+its record would overwrite the program's (see [Wrapper
+processes](mpi.md#wrapper-processes)).
 
 With Open MPI on a machine with fewer than four cores, `mpirun` refuses to
 start four ranks unless you add `--oversubscribe` after it (MPICH has no such
@@ -96,11 +99,12 @@ bottom:
   times the average.
 - **Per node**: the sum of `VmHWM` over the ranks of each node.
 - **Ranks by peak heap**: `VmHWM` exceeds the heap peak by about 11 MiB on
-  every rank. This constant gap is the memory heapline does not count as heap:
-  code, libraries, stacks and the shared memory MPI maps. It weighs more on a
-  small heap, which is why the ratio of heap to `VmHWM` is 0.96 on rank 3 and
-  only about 0.86 on rank 0. The example writes all the memory it allocates,
-  so its heap is entirely resident and the ratio is high at all.
+  every rank. This constant gap is mostly memory that heapline does not count
+  as heap: code, libraries, stacks and the shared memory MPI maps. It weighs
+  more on a small heap, which is why the ratio of heap to `VmHWM` is 0.96 on
+  rank 3 and only about 0.86 on rank 0. The example writes all the memory it
+  allocates, so its heap is entirely resident and the ratio is high on every
+  rank.
 
 ## 6. Size the job
 

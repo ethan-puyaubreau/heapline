@@ -23,7 +23,8 @@ Why they differ:
   does not see; the buffers they obtain with `malloc` are counted. The
   allocator also keeps freed memory and fragments it (arenas per thread,
   pages it retains instead of returning them), so resident memory can stay
-  above the heap in use.
+  above the heap in use. In the [tutorial](tutorial.md), `VmHWM` exceeds the
+  heap peak by about 11 MiB on every rank.
 - **`MaxRSS` below `VmHWM`**: Slurm samples. A peak shorter than the sampling
   period can fall between two samples.
 - **cgroup peak usually the highest**: the page cache of the files the job

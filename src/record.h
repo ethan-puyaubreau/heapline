@@ -22,7 +22,8 @@ using EnvLookup = const char* (*)(const char*);
  * non-negative integer. Empty or invalid values are skipped.
  *
  * SLURM_PROCID comes last because the ranks started by mpirun inside a Slurm
- * allocation inherit the one of the batch script (0), which is not their rank.
+ * allocation inherit the one of the batch step: 0 on the first node, and the
+ * index of the node's daemon on the other nodes. It is not their MPI rank.
  *
  * @return The rank, or -1 when the process is not part of an MPI job.
  */

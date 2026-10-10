@@ -14,14 +14,17 @@ and prints a summary of the job.
 | `--csv FILE` | Also write all records, sorted by rank, to one CSV file. Write it outside the records directory, since every `.csv` file of that directory is read as a record |
 | `--version` | Print the version and exit |
 
-Files that are not version 1 records, or that lack their values (a process
-killed before it could write them), are reported on stderr and skipped. Gaps
-in the rank numbers are reported as missing ranks. Missing ranks are the gaps
-below the highest rank seen, so a lost last rank cannot be detected. A warning
-names two files that hold the same rank (for example stale records from an
-earlier run in the same directory), and lists the jobs when records come from
-several Slurm jobs. The exit code is 1 when no record is valid or an error
-occurs, 0 otherwise.
+Files that are not version 1 records, or that lack their values, are reported
+on stderr and skipped. A process killed by a signal writes no file at all: an
+empty or truncated file comes from a failed write, or from a kill between the
+opening of the file and the write. Gaps in the rank numbers are reported as
+missing ranks. Missing ranks are the gaps below the highest rank seen, so a
+lost last rank cannot be detected. A warning names two files that hold the
+same rank (for example stale records from an earlier run in the same
+directory, or the record of a [wrapper process](mpi.md#wrapper-processes)
+next to the program's), and lists the jobs when records come from several
+Slurm jobs. The exit code is 1 when no record is valid or an error occurs, 0
+otherwise.
 
 ## Reading the output
 

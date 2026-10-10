@@ -35,9 +35,9 @@ two versions.
 ## History
 
 The history lives in the `bench-data` branch of the repository, one line per
-point. A push to `main` adds a point, and so does a manual run; when pushes
-come in quick succession, some commits are skipped. The table lists the last
-20 points, newest first.
+point. A push to `main` adds a point, and so does a manual run on `main`;
+when pushes come in quick succession, some commits are skipped. The table
+lists the last 20 points, newest first.
 
 ```{include} _generated/performance.md
 :relative-images:

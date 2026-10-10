@@ -28,6 +28,8 @@ ctest --test-dir build --output-on-failure
 |---|---|---|
 | `HEAPLINE_ENABLE_TESTS` | `ON` | Build the tests |
 | `HEAPLINE_ENABLE_WERROR` | `OFF` | Treat compiler warnings as errors |
+| `HEAPLINE_ENABLE_EXAMPLES` | `OFF` | Build the examples, which need MPI |
+| `HEAPLINE_ENABLE_BENCH` | `OFF` | Build the overhead benchmark |
 
 ## Output
 
@@ -47,6 +49,10 @@ rank and `%h` with the host name, so each rank gets its own file:
 ```
 mpirun -n 4 env HEAPLINE_OUTPUT=heapline.%h.%r.csv LD_PRELOAD=$PWD/libheapline.so ./app
 ```
+
+Preload the program itself, as `env` does above: a wrapper script run without
+`exec`, or `/usr/bin/time`, that is preloaded too has the same rank and host,
+and its record overwrites the program's unless the file name contains `%p`.
 
 The rank is read from `OMPI_COMM_WORLD_RANK`, `PMIX_RANK`, `PMI_RANK`,
 `MV2_COMM_WORLD_RANK` or `SLURM_PROCID`, in this order, and is -1 outside MPI.

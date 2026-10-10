@@ -29,14 +29,13 @@ changing the meaning of one raises the version.
 | `allocs` | | Successful allocations; a `realloc` counts as one |
 | `frees` | | Released blocks; a `realloc` counts as one |
 | `peak_heap_bytes` | bytes | Highest heap in use, in usable sizes |
-| `peak_heap_time_s` | s | Time of that peak since the loading of the library, read from a coarse clock (about 1 to 4 ms); written with three decimals and a dot, whatever the locale of the program |
+| `peak_heap_time_s` | s | Time of that peak since the loading of the library, read from a coarse clock (one kernel tick, 1 to 10 ms); written with three decimals and a dot, whatever the locale of the program |
 | `live_heap_at_exit_bytes` | bytes | Heap still in use at exit |
 | `vmhwm_bytes` | bytes | Peak resident set size of the process (`VmHWM`), -1 if unknown |
 | `vmrss_at_exit_bytes` | bytes | Resident set size at exit (`VmRSS`), -1 if unknown |
 
-The peak and its time are stored separately: under heavy concurrent
-allocation, the time may belong to a peak a few bytes away from the one
-reported.
+The peak and its time are stored separately: under concurrent allocation,
+the time may be that of a slightly earlier peak than the one reported.
 
 ## File names
 
