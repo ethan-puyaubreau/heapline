@@ -27,10 +27,10 @@
   Python program left the record of bash, with a peak of 158.7 KiB. Start the
   program with `exec` and preload it alone, or add `%p` to the file name. See
   [Wrapper processes](mpi.md#wrapper-processes).
-- The cost is paid on every allocation. On a benchmark that does nothing but
-  allocate and release from four threads, heapline makes the program about
-  five times slower. Programs that compute between allocations pay it less
-  often, but they were not measured here. See
+- The cost is paid on every allocation. In a process that holds its data, as a
+  simulation does, four threads that allocate continuously add about 20% to
+  the run time, and so does a single thread. A small program whose threads do
+  nothing but allocate adds the most, about 170%. See
   [Performance history](performance.md).
 
 ## When to use something else

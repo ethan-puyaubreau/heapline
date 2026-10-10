@@ -79,8 +79,9 @@ file for further analysis.
   found with `dlsym(RTLD_NEXT, ...)`.
 - Block sizes come from `malloc_usable_size`, so no table of live pointers is
   kept and nothing is allocated on the interception path.
-- Counters are lock-free atomics. A `realloc` counts as one release and one
-  allocation.
+- Each thread counts in its own counters and publishes its changes in
+  batches; reading the totals takes a mutex. A `realloc` counts as one release
+  and one allocation.
 - A program can read the counters at runtime through `heapline_get_stats`,
   declared in `include/heapline.h`, by looking the symbol up with `dlsym`.
 
