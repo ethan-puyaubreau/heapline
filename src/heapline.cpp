@@ -111,19 +111,11 @@ static_assert(sizeof(ThreadCounters) == 64, "one node per cache line");
  * requires the library to be loaded at startup, as LD_PRELOAD does.
  *
  * local is the node of the thread, or null when the thread counts in the
- * globals. registered tells that the thread has tried to get a node.
+ * globals. registered tells that the thread has got a node, or has failed to
+ * get one for good.
  */
 __attribute__((tls_model("initial-exec"))) thread_local ThreadCounters* local;
 __attribute__((tls_model("initial-exec"))) thread_local bool registered;
-
-/**
- * @brief Set while the calling thread holds registry_mutex for a fork, from
- * the prepare handler of heapline to its handler in the parent or the child.
- * Handlers of other libraries run in between and may allocate: the thread
- * then counts in the globals and does not register, which would lock the
- * mutex it already holds.
- */
-__attribute__((tls_model("initial-exec"))) thread_local bool holds_registry;
 
 /**
  * @brief Nodes of the threads that have counters, and their number.
@@ -295,9 +287,20 @@ void retire(void* arg);
 /**
  * @brief Give the calling thread a node on its first counted operation.
  *
- * registered is set first, so that an allocation made while registering,
- * by pthread_setspecific for instance, does not register again. If no node
- * can be had, the thread keeps counting in the globals.
+ * registry_mutex is taken with a trylock, and a thread that finds it busy
+ * does not register: the operation counts in the globals and the next one
+ * tries again. Waiting could deadlock with a fork. The prepare handler of
+ * heapline holds the mutex before glibc takes its own locks (for the name
+ * services, the list of streams, malloc), so a thread whose first counted
+ * operation is made under one of them would wait for the mutex while the
+ * forking thread waits for that lock. A fork made from a signal handler that
+ * interrupts a registration is the same case. The forking thread, and the
+ * child before it resets the registry, find the mutex busy too.
+ *
+ * registered is set once the mutex is held, so that an allocation made while
+ * registering, by pthread_setspecific for instance, does not register again.
+ * Nothing under the mutex calls malloc: take_node uses mmap. If no node can be
+ * had, the thread keeps counting in the globals.
  *
  * A thread that registers after its last round of key destructors sets
  * exit_key too late for retire() to run: it keeps its node after its exit.
@@ -308,9 +311,10 @@ void retire(void* arg);
  * node of its own.
  */
 void register_thread() {
-  if (holds_registry || !registry_ready.load(std::memory_order_acquire)) return;
+  if (!registry_ready.load(std::memory_order_acquire)) return;
+  if (pthread_mutex_trylock(&registry_mutex) != 0) return;
   registered = true;
-  pthread_mutex_lock(&registry_mutex);
+
   ThreadCounters* node = take_node();
   if (node) {
     node->next = registry;
@@ -425,19 +429,12 @@ heapline_stats totals() {
 
 /**
  * @brief Fork handlers. lock_registry runs before the fork, so that no other
- * thread holds registry_mutex while the process forks; until the parent
- * unlocks it, or the child resets the registry (see reset_registry_in_child),
- * the forking thread does not register, see holds_registry.
+ * thread holds registry_mutex while the process forks; the parent unlocks it
+ * again, and the child resets the registry, see reset_registry_in_child().
+ * Until then no thread of the process registers, see register_thread().
  */
-void lock_registry() {
-  pthread_mutex_lock(&registry_mutex);
-  holds_registry = true;
-}
-
-void unlock_registry() {
-  holds_registry = false;
-  pthread_mutex_unlock(&registry_mutex);
-}
+void lock_registry() { pthread_mutex_lock(&registry_mutex); }
+void unlock_registry() { pthread_mutex_unlock(&registry_mutex); }
 
 /**
  * @brief Fork handler of the child, where only the forking thread exists.
@@ -465,7 +462,6 @@ void reset_registry_in_child() {
   if (mine) mine->next = nullptr;
   registered_threads = mine ? 1 : 0;
   limit_shift.store(shift_for(registered_threads), std::memory_order_relaxed);
-  holds_registry = false;
   pthread_mutex_unlock(&registry_mutex);
 }
 
