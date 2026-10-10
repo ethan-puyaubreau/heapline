@@ -10,6 +10,7 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <malloc.h>
+#include <pthread.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -48,33 +49,78 @@ VallocFn real_valloc                = nullptr;
 VallocFn real_pvalloc               = nullptr;
 
 /**
- * @brief Number of successful allocations.
+ * @brief Allocations and releases counted outside of the per-thread
+ * counters: those of exited threads, and those made by a thread that is not
+ * registered, before the library constructor or after its exit handler.
  */
 std::atomic<uint64_t> alloc_count{0};
-
-/**
- * @brief Number of non-null pointers released.
- */
 std::atomic<uint64_t> free_count{0};
 
 /**
- * @brief Bytes currently allocated, as reported by malloc_usable_size.
+ * @brief Published bytes currently allocated, as reported by
+ * malloc_usable_size. Registered threads hold back a bounded part of their
+ * own changes, see ThreadCounters.
  *
  * Signed so that releasing blocks allocated outside of the tracked entry
- * points shows up as a negative value instead of wrapping around.
+ * points shows up as a negative value instead of wrapping around. Each global
+ * read on the allocation path sits on its own cache line, so that publishing
+ * does not slow down the reads of the others.
  */
-std::atomic<int64_t> live_bytes{0};
+alignas(64) std::atomic<int64_t> live_bytes{0};
 
 /**
- * @brief Highest value reached by live_bytes.
+ * @brief Highest value reached by live_bytes, and the CLOCK_MONOTONIC_COARSE
+ * time, in nanoseconds, at which it was last raised. Stored apart, so the two
+ * may briefly disagree.
  */
-std::atomic<int64_t> peak_bytes{0};
-
-/**
- * @brief CLOCK_MONOTONIC_COARSE time, in nanoseconds, at which peak_bytes was
- * last raised. Stored apart from peak_bytes, so the two may briefly disagree.
- */
+alignas(64) std::atomic<int64_t> peak_bytes{0};
 std::atomic<int64_t> peak_time_ns{0};
+
+/**
+ * @brief A registered thread holds back at most peak_bytes >> limit_shift
+ * bytes, see shift_for().
+ */
+alignas(64) std::atomic<int> limit_shift{63};
+
+/**
+ * @brief Counters of one thread.
+ *
+ * Only the owning thread writes them, with relaxed loads and stores rather
+ * than read-modify-write operations, so the allocation path touches no
+ * shared cache line. pending is published to live_bytes once its magnitude
+ * exceeds peak_bytes >> limit_shift. totals() reads the counters of other
+ * threads under registry_mutex.
+ *
+ * Trivially destructible and zero-initialized, so the thread needs no TLS
+ * constructor or destructor, which could allocate. The initial-exec model
+ * avoids a call to __tls_get_addr on every access; it requires the library
+ * to be loaded at startup, as LD_PRELOAD does.
+ */
+struct ThreadCounters {
+  std::atomic<int64_t> pending;  ///< Bytes not yet added to live_bytes.
+  std::atomic<uint64_t> allocs;  ///< Allocations made by this thread.
+  std::atomic<uint64_t> frees;   ///< Releases made by this thread.
+  ThreadCounters* next;          ///< Next registered thread.
+  bool registered;               ///< Registration has been done.
+  bool own;                      ///< Counts here rather than in the globals.
+};
+
+__attribute__((tls_model("initial-exec"))) thread_local ThreadCounters local;
+
+/**
+ * @brief Registered threads and their number. registry_mutex also
+ * serializes the exit of a thread with the computation of totals.
+ */
+pthread_mutex_t registry_mutex = PTHREAD_MUTEX_INITIALIZER;
+ThreadCounters* registry       = nullptr;
+int64_t registered_threads     = 0;
+
+/**
+ * @brief Key whose destructor folds the counters of an exiting thread into
+ * the globals. Threads register only once the constructor has created it.
+ */
+pthread_key_t exit_key;
+std::atomic<bool> registry_ready{false};
 
 /**
  * @brief CLOCK_MONOTONIC time, in nanoseconds, at which the library was
@@ -140,22 +186,25 @@ void resolve() {
   resolving     = false;
 }
 
-__attribute__((constructor)) void init() {
-  start_ns = now_ns(CLOCK_MONOTONIC);
-  resolve();
+/**
+ * @brief limit_shift for @p threads registered threads.
+ *
+ * A single thread holds nothing back, so its peak is exact. With n threads,
+ * each holds back at most 1/(4096 * 2^ceil(log2 n)) of the peak, so all of
+ * them together hold back at most 1/4096 of it.
+ */
+int shift_for(int64_t threads) {
+  if (threads <= 1) return 63;
+  int shift = 12;
+  while ((int64_t{1} << (shift - 12)) < threads) ++shift;
+  return shift;
 }
 
 /**
- * @brief Account for a new block.
- *
- * The usable size is read back from the allocator, so no table of live
- * pointers is needed and nothing is allocated on this path.
+ * @brief Add @p delta to live_bytes and raise the peak if needed.
  */
-void record_alloc(void* ptr) {
-  if (!ptr) return;
-  alloc_count.fetch_add(1, std::memory_order_relaxed);
-  auto size    = static_cast<int64_t>(malloc_usable_size(ptr));
-  int64_t live = live_bytes.fetch_add(size, std::memory_order_relaxed) + size;
+void publish(int64_t delta) {
+  int64_t live = live_bytes.fetch_add(delta, std::memory_order_relaxed) + delta;
   int64_t peak = peak_bytes.load(std::memory_order_relaxed);
   while (live > peak) {
     if (peak_bytes.compare_exchange_weak(peak, live,
@@ -168,12 +217,141 @@ void record_alloc(void* ptr) {
 }
 
 /**
+ * @brief Publish the bytes held back by the calling thread.
+ */
+void publish_own() {
+  if (!local.own) return;
+  int64_t pending = local.pending.load(std::memory_order_relaxed);
+  if (pending == 0) return;
+  local.pending.store(0, std::memory_order_relaxed);
+  publish(pending);
+}
+
+void retire(void* arg);
+
+/**
+ * @brief Register the calling thread on its first counted operation.
+ *
+ * registered is set first, so that an allocation made while registering,
+ * by pthread_setspecific for instance, does not register again.
+ */
+void register_thread() {
+  if (!registry_ready.load(std::memory_order_acquire)) return;
+  local.registered = true;
+  pthread_mutex_lock(&registry_mutex);
+  local.next = registry;
+  registry   = &local;
+  limit_shift.store(shift_for(++registered_threads), std::memory_order_relaxed);
+  local.own = true;
+  pthread_mutex_unlock(&registry_mutex);
+  // Without the key, the thread would stay in the registry after its exit.
+  if (pthread_setspecific(exit_key, &local) != 0) retire(&local);
+}
+
+/**
+ * @brief Destructor of exit_key: fold the counters of the exiting thread into
+ * the globals and unregister it. Later operations of the thread, made by
+ * other TLS destructors, are counted in the globals directly.
+ */
+void retire(void* arg) {
+  auto* counters = static_cast<ThreadCounters*>(arg);
+  pthread_mutex_lock(&registry_mutex);
+  publish(counters->pending.load(std::memory_order_relaxed));
+  counters->pending.store(0, std::memory_order_relaxed);
+  alloc_count.fetch_add(counters->allocs.load(std::memory_order_relaxed),
+                        std::memory_order_relaxed);
+  free_count.fetch_add(counters->frees.load(std::memory_order_relaxed),
+                       std::memory_order_relaxed);
+  for (ThreadCounters** link = &registry; *link; link = &(*link)->next) {
+    if (*link == counters) {
+      *link = counters->next;
+      break;
+    }
+  }
+  limit_shift.store(shift_for(--registered_threads), std::memory_order_relaxed);
+  counters->own = false;
+  pthread_mutex_unlock(&registry_mutex);
+}
+
+/**
+ * @brief Count one operation of @p delta bytes: the usable size for an
+ * allocation, minus the usable size for a release.
+ *
+ * The usable size is read back from the allocator, so no table of live
+ * pointers is needed and nothing is allocated on this path.
+ */
+void account(int64_t delta, bool is_alloc) {
+  if (!local.registered) register_thread();
+  if (!local.own) {
+    (is_alloc ? alloc_count : free_count)
+        .fetch_add(1, std::memory_order_relaxed);
+    publish(delta);
+    return;
+  }
+  std::atomic<uint64_t>& count = is_alloc ? local.allocs : local.frees;
+  count.store(count.load(std::memory_order_relaxed) + 1,
+              std::memory_order_relaxed);
+  int64_t pending = local.pending.load(std::memory_order_relaxed) + delta;
+  int64_t limit   = peak_bytes.load(std::memory_order_relaxed) >>
+                  limit_shift.load(std::memory_order_relaxed);
+  if (pending > limit || pending < -limit) {
+    local.pending.store(0, std::memory_order_relaxed);
+    publish(pending);
+  } else {
+    local.pending.store(pending, std::memory_order_relaxed);
+  }
+}
+
+void record_alloc(void* ptr) {
+  if (!ptr) return;
+  account(static_cast<int64_t>(malloc_usable_size(ptr)), true);
+}
+
+/**
  * @brief Account for a released block of the given usable size.
  */
 void record_free(void* ptr, size_t size) {
   if (!ptr) return;
-  free_count.fetch_add(1, std::memory_order_relaxed);
-  live_bytes.fetch_sub(static_cast<int64_t>(size), std::memory_order_relaxed);
+  account(-static_cast<int64_t>(size), false);
+}
+
+/**
+ * @brief Exact totals: the globals plus the counters of the threads still
+ * registered. An operation in progress in another thread may be missing.
+ */
+heapline_stats totals() {
+  heapline_stats stats{};
+  pthread_mutex_lock(&registry_mutex);
+  stats.allocs     = alloc_count.load(std::memory_order_relaxed);
+  stats.frees      = free_count.load(std::memory_order_relaxed);
+  stats.live_bytes = live_bytes.load(std::memory_order_relaxed);
+  for (ThreadCounters* counters = registry; counters;
+       counters                 = counters->next) {
+    stats.allocs += counters->allocs.load(std::memory_order_relaxed);
+    stats.frees += counters->frees.load(std::memory_order_relaxed);
+    stats.live_bytes += counters->pending.load(std::memory_order_relaxed);
+  }
+  pthread_mutex_unlock(&registry_mutex);
+  stats.peak_bytes = peak_bytes.load(std::memory_order_relaxed);
+  return stats;
+}
+
+/**
+ * @brief Fork handlers: no other thread holds registry_mutex while the
+ * process forks, so the child can take it. The child keeps the entries of
+ * the parent's other threads, as it keeps the parent's global counters.
+ */
+void lock_registry() { pthread_mutex_lock(&registry_mutex); }
+void unlock_registry() { pthread_mutex_unlock(&registry_mutex); }
+
+__attribute__((constructor)) void init() {
+  start_ns = now_ns(CLOCK_MONOTONIC);
+  resolve();
+  // Without the key or the fork handlers, every thread keeps counting in
+  // the globals, as before.
+  if (pthread_key_create(&exit_key, retire) == 0 &&
+      pthread_atfork(lock_registry, unlock_registry, unlock_registry) == 0)
+    registry_ready.store(true, std::memory_order_release);
 }
 
 /**
@@ -245,6 +423,9 @@ __attribute__((destructor)) void finish() {
   const char* job             = getenv("SLURM_JOB_ID");
   heapline::ProcStatus status = heapline::read_status();
 
+  publish_own();
+  const heapline_stats stats = totals();
+
   heapline::Record record;
   record.rank = heapline::find_rank(
       +[](const char* name) -> const char* { return getenv(name); });
@@ -252,12 +433,12 @@ __attribute__((destructor)) void finish() {
   record.pid             = getpid();
   record.job             = job ? job : "";
   record.elapsed_s       = (now_ns(CLOCK_MONOTONIC) - start_ns) / 1e9;
-  record.allocs          = alloc_count.load();
-  record.frees           = free_count.load();
-  record.peak_heap_bytes = peak_bytes.load();
+  record.allocs          = stats.allocs;
+  record.frees           = stats.frees;
+  record.peak_heap_bytes = stats.peak_bytes;
   record.peak_heap_time_s =
       std::max<int64_t>(0, peak_time_ns.load() - start_ns) / 1e9;
-  record.live_heap_at_exit_bytes = live_bytes.load();
+  record.live_heap_at_exit_bytes = stats.live_bytes;
   record.vmhwm_bytes             = status.vmhwm_bytes;
   record.vmrss_at_exit_bytes     = status.vmrss_bytes;
   print_summary(record);
@@ -267,10 +448,8 @@ __attribute__((destructor)) void finish() {
 }  // namespace
 
 extern "C" void heapline_get_stats(heapline_stats* stats) {
-  stats->allocs     = alloc_count.load();
-  stats->frees      = free_count.load();
-  stats->live_bytes = live_bytes.load();
-  stats->peak_bytes = peak_bytes.load();
+  publish_own();
+  *stats = totals();
 }
 
 extern "C" void* malloc(size_t size) noexcept {
