@@ -396,7 +396,9 @@ void record_free(void* ptr, size_t size) {
 
 /**
  * @brief Exact totals: the globals plus the counters of the threads still
- * registered. An operation in progress in another thread may be missing.
+ * registered. An operation in progress in another thread may be missing. The
+ * peak is raised to the live bytes, which include the bytes held back by the
+ * threads: the true peak is not below the true live bytes.
  */
 heapline_stats totals() {
   heapline_stats stats{};
@@ -411,7 +413,8 @@ heapline_stats totals() {
     stats.live_bytes += counters->pending.load(std::memory_order_relaxed);
   }
   pthread_mutex_unlock(&registry_mutex);
-  stats.peak_bytes = peak_bytes.load(std::memory_order_relaxed);
+  stats.peak_bytes =
+      std::max(peak_bytes.load(std::memory_order_relaxed), stats.live_bytes);
   return stats;
 }
 

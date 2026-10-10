@@ -151,6 +151,7 @@ int main() {
         "frees of live threads");
   check(near(during.live_bytes - before.live_bytes, held_bytes, kSlackBytes),
         "bytes of live threads");
+  check(during.peak_bytes >= during.live_bytes, "peak covers the live bytes");
 
   // After the join, exited threads have folded everything into the totals.
   // Nothing has been released yet.
