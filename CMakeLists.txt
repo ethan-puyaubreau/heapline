@@ -20,6 +20,9 @@ target_link_libraries(heapline PRIVATE ${CMAKE_DL_LIBS})
 add_executable(heapline-report tools/heapline-report.cpp)
 target_compile_definitions(heapline-report
                            PRIVATE HEAPLINE_VERSION="${PROJECT_VERSION}")
+# std::filesystem needs -lstdc++fs before GCC 9.1 (RHEL and Rocky 8 system GCC).
+target_link_libraries(heapline-report PRIVATE
+  $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.1>>:stdc++fs>)
 
 include(GNUInstallDirs)
 install(TARGETS heapline LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
