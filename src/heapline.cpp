@@ -237,6 +237,11 @@ void retire(void* arg);
  *
  * registered is set first, so that an allocation made while registering,
  * by pthread_setspecific for instance, does not register again.
+ *
+ * A thread whose first counted operation comes after the last round of key
+ * destructors, made by another TLS destructor for instance, sets the key too
+ * late for retire() to run: it stays in the registry after its exit. This
+ * needs a thread that made no counted operation earlier in its life.
  */
 void register_thread() {
   if (!registry_ready.load(std::memory_order_acquire)) return;
@@ -305,6 +310,9 @@ void account(int64_t delta, bool is_alloc) {
   }
 }
 
+/**
+ * @brief Account for a new block.
+ */
 void record_alloc(void* ptr) {
   if (!ptr) return;
   account(static_cast<int64_t>(malloc_usable_size(ptr)), true);
