@@ -6,14 +6,21 @@ on:
   pull_request:
     branches: [ main ]
 
-permissions:
-  contents: write
-
 jobs:
   linux:
     name: Package Linux x86_64
+    # Built on Rocky Linux 8 so that the library needs glibc 2.17 at most.
     runs-on: ubuntu-24.04
+    container: rockylinux:8
+    permissions:
+      contents: read
     steps:
+      - name: Install the toolchain
+        # libstdc++-static is in the PowerTools repository, off by default.
+        run: >
+          dnf install -y --enablerepo=powertools gcc-c++ cmake make binutils
+          libstdc++-static python3 diffutils git tar gzip findutils
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -28,7 +35,9 @@ jobs:
 
       - name: Build
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DHEAPLINE_ENABLE_WERROR=ON
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DHEAPLINE_ENABLE_WERROR=ON -DHEAPLINE_STATIC_RUNTIME=ON \
+            -DCMAKE_INSTALL_LIBDIR=lib
           cmake --build build --parallel
 
       - name: Run tests
@@ -39,15 +48,67 @@ jobs:
           name="heapline-v$VERSION-linux-x86_64"
           cmake --install build --prefix "$name"
           test -x "$name/bin/heapline-report"
+          sh tests/check_dependencies.sh "$name/lib/libheapline.so" 2.17
+          sh tests/check_dependencies.sh "$name/bin/heapline-report" 2.17
           "$name/bin/heapline-report" --version
           cp README.md LICENSE "$name/"
           tar czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
 
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive
+          path: |
+            heapline-v*.tar.gz
+            heapline-v*.tar.gz.sha256
+          if-no-files-found: error
+
+  smoke:
+    name: Run the archive on Ubuntu
+    needs: linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Download archive
+        uses: actions/download-artifact@v4
+        with:
+          name: archive
+
+      - name: Check and extract
+        run: |
+          sha256sum -c heapline-v*.tar.gz.sha256
+          tar xzf heapline-v*.tar.gz
+
+      - name: Run a program under the library
+        shell: bash
+        run: |
+          set -o pipefail
+          dir=$(ls -d "$PWD"/heapline-v*-linux-x86_64)
+          "$dir/bin/heapline-report" --version
+          LD_PRELOAD="$dir/lib/libheapline.so" HEAPLINE_OUTPUT=run.csv \
+            python3 -c "x = [bytes(10**6) for i in range(50)]"
+          "$dir/bin/heapline-report" run.csv | tee report.txt
+          grep -q 'Peak heap' report.txt
+
+  publish:
+    name: Publish release
+    needs: smoke
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download archive
+        uses: actions/download-artifact@v4
+        with:
+          name: archive
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release create "$GITHUB_REF_NAME" heapline-v*.tar.gz* \
             --title "heapline $GITHUB_REF_NAME" \
