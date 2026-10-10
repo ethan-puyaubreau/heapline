@@ -337,12 +337,41 @@ heapline_stats totals() {
 }
 
 /**
- * @brief Fork handlers: no other thread holds registry_mutex while the
- * process forks, so the child can take it. The child keeps the entries of
- * the parent's other threads, as it keeps the parent's global counters.
+ * @brief Fork handlers. lock_registry runs before the fork, so that no other
+ * thread holds registry_mutex while the process forks; the forking thread is
+ * registered first, since registering later would lock the mutex twice. The
+ * parent then unlocks it, and the child resets the registry, see
+ * reset_registry_in_child().
  */
-void lock_registry() { pthread_mutex_lock(&registry_mutex); }
+void lock_registry() {
+  if (!local.registered) register_thread();
+  pthread_mutex_lock(&registry_mutex);
+}
+
 void unlock_registry() { pthread_mutex_unlock(&registry_mutex); }
+
+/**
+ * @brief Fork handler of the child, where only the forking thread exists.
+ * Fold the counters of the parent's other threads into the globals and drop
+ * them from the registry: glibc reuses their stacks, which hold their
+ * counters, for the next threads of the child.
+ */
+void reset_registry_in_child() {
+  for (ThreadCounters* counters = registry; counters;
+       counters                 = counters->next) {
+    if (counters == &local) continue;
+    publish(counters->pending.load(std::memory_order_relaxed));
+    alloc_count.fetch_add(counters->allocs.load(std::memory_order_relaxed),
+                          std::memory_order_relaxed);
+    free_count.fetch_add(counters->frees.load(std::memory_order_relaxed),
+                         std::memory_order_relaxed);
+  }
+  registry           = local.own ? &local : nullptr;
+  local.next         = nullptr;
+  registered_threads = local.own ? 1 : 0;
+  limit_shift.store(shift_for(registered_threads), std::memory_order_relaxed);
+  pthread_mutex_unlock(&registry_mutex);
+}
 
 __attribute__((constructor)) void init() {
   start_ns = now_ns(CLOCK_MONOTONIC);
@@ -350,7 +379,8 @@ __attribute__((constructor)) void init() {
   // Without the key or the fork handlers, every thread keeps counting in
   // the globals, as before.
   if (pthread_key_create(&exit_key, retire) == 0 &&
-      pthread_atfork(lock_registry, unlock_registry, unlock_registry) == 0)
+      pthread_atfork(lock_registry, unlock_registry, reset_registry_in_child) ==
+          0)
     registry_ready.store(true, std::memory_order_release);
 }
 

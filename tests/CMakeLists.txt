@@ -16,6 +16,17 @@ add_test(NAME alloc_threads COMMAND alloc_threads)
 set_tests_properties(alloc_threads PROPERTIES
                      ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>)
 
+# A forked child that starts a thread must not hang on the registry of the
+# parent's threads.
+add_executable(fork_child fork_child.cpp)
+target_include_directories(fork_child PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(fork_child PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
+target_compile_options(fork_child PRIVATE -fno-builtin)
+add_test(NAME fork_child COMMAND fork_child)
+set_tests_properties(fork_child PROPERTIES
+                     ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>
+                     TIMEOUT 30)
+
 set(check_record ${CMAKE_CURRENT_SOURCE_DIR}/check_record.sh)
 set(lib $<TARGET_FILE:heapline>)
 set(prog $<TARGET_FILE:alloc_pattern>)
