@@ -36,7 +36,8 @@ Slurm applies per node.
 
 **Ranks by peak heap**: for each rank, the heap peak, its time, `VmHWM` and
 the ratio of the two. A ratio well below 1 means that much of the resident
-memory is not heap: libraries, stacks, MPI buffers or memory mapped directly
-with `mmap`. See [What "peak memory" means](peak-memory.md).
+memory is not heap in use: libraries, stacks, shared memory and other regions
+mapped with `mmap` (MPI libraries do this), or freed memory that the allocator
+keeps. See [What "peak memory" means](peak-memory.md).
 
 **Slurm**: how this compares with `sacct`.

@@ -9,7 +9,8 @@
 - Memory obtained with `mmap` directly, or allocated on a GPU, is not heap
   and is not counted.
 - A process killed by a signal writes no record. `heapline-report` lists it as
-  a missing rank.
+  a missing rank, unless it was the highest rank of the job, which it cannot
+  tell apart from a smaller job.
 - The summary on stderr is lost when the program closes stderr before
   exiting, as GNU coreutils do. The record written to `HEAPLINE_OUTPUT` is not.
 - The cost is paid on every allocation. On a benchmark that does nothing but
