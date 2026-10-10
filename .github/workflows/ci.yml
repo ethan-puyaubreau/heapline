@@ -44,3 +44,31 @@ jobs:
 
       - name: Check code formatting
         run: clang-format-18 --dry-run --Werror $(git ls-files '*.cpp' '*.h')
+
+  example:
+    name: MPI example
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Open MPI
+        run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DHEAPLINE_ENABLE_WERROR=ON -DHEAPLINE_ENABLE_EXAMPLES=ON
+          cmake --build build --parallel
+
+      - name: Run the example on 4 ranks
+        run: |
+          mkdir records
+          mpirun --oversubscribe -n 4 env LD_PRELOAD=$PWD/build/libheapline.so \
+            HEAPLINE_OUTPUT=$PWD/records/heapline.%h.%r.csv build/examples/mpi_imbalance
+
+      - name: Summarize with heapline-report
+        run: build/heapline-report --csv merged.csv records | tee report.txt
+
+      - name: Check the peaks
+        run: sh tests/check_example.sh merged.csv 4
