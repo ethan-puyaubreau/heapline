@@ -8,6 +8,14 @@ add_test(NAME alloc_pattern COMMAND alloc_pattern)
 set_tests_properties(alloc_pattern PROPERTIES
                      ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>)
 
+add_executable(alloc_threads alloc_threads.cpp)
+target_include_directories(alloc_threads PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(alloc_threads PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
+target_compile_options(alloc_threads PRIVATE -fno-builtin)
+add_test(NAME alloc_threads COMMAND alloc_threads)
+set_tests_properties(alloc_threads PROPERTIES
+                     ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>)
+
 set(check_record ${CMAKE_CURRENT_SOURCE_DIR}/check_record.sh)
 set(lib $<TARGET_FILE:heapline>)
 set(prog $<TARGET_FILE:alloc_pattern>)

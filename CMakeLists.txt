@@ -13,9 +13,11 @@ option(HEAPLINE_ENABLE_EXAMPLES "Build the examples, which need MPI" OFF)
 add_compile_options(-Wall -Wextra -Wpedantic
                     $<$<BOOL:${HEAPLINE_ENABLE_WERROR}>:-Werror>)
 
+find_package(Threads REQUIRED)
+
 add_library(heapline SHARED src/heapline.cpp src/record.cpp)
 target_include_directories(heapline PUBLIC include PRIVATE src)
-target_link_libraries(heapline PRIVATE ${CMAKE_DL_LIBS})
+target_link_libraries(heapline PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
 
 add_executable(heapline-report tools/heapline-report.cpp)
 target_compile_definitions(heapline-report
