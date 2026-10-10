@@ -6,6 +6,9 @@ heapline is a small shared library loaded with `LD_PRELOAD`. It intercepts
 the glibc allocation functions, counts allocations and releases, and tracks
 the bytes in use and their peak. A summary is printed to stderr at exit.
 
+Documentation, tutorial and performance history:
+<https://ethan-puyaubreau.github.io/heapline/>
+
 ```
 $ LD_PRELOAD=./libheapline.so python3 -c "x = [bytes(10**6) for i in range(300)]"
 heapline: 4153 allocs, 4123 frees, peak 288.3 MiB, live at exit 472.2 KiB
