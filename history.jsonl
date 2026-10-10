@@ -1,0 +1,1 @@
+{"commit": "13a867b", "date": "2026-10-10T04:28:16Z", "cpu": "AMD EPYC 9V74 80-Core Processor", "runs": 10, "seconds_without": 1.1065, "seconds_with": 2.5280, "overhead": 1.2847, "allocs_per_s": 1.582e+07}
