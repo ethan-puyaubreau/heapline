@@ -9,6 +9,8 @@ option(HEAPLINE_ENABLE_WERROR "Treat compiler warnings as errors" OFF)
 option(HEAPLINE_ENABLE_TESTS "Build the tests" ON)
 option(HEAPLINE_ENABLE_BENCH "Build the overhead benchmark" OFF)
 option(HEAPLINE_ENABLE_EXAMPLES "Build the examples, which need MPI" OFF)
+option(HEAPLINE_STATIC_RUNTIME
+       "Link heapline-report with libstdc++ and libgcc statically" OFF)
 
 add_compile_options(-Wall -Wextra -Wpedantic
                     $<$<BOOL:${HEAPLINE_ENABLE_WERROR}>:-Werror>)
@@ -18,6 +20,10 @@ find_package(Threads REQUIRED)
 add_library(heapline SHARED src/heapline.cpp src/record.cpp)
 target_include_directories(heapline PUBLIC include PRIVATE src)
 target_link_libraries(heapline PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
+# The library depends on the C library only: no exception tables, so no
+# libstdc++ or libgcc_s.
+target_compile_options(heapline PRIVATE -fno-exceptions -fno-rtti)
+target_link_options(heapline PRIVATE -Wl,--as-needed)
 
 add_executable(heapline-report tools/heapline-report.cpp)
 target_compile_definitions(heapline-report
@@ -25,6 +31,10 @@ target_compile_definitions(heapline-report
 # std::filesystem needs -lstdc++fs before GCC 9.1 (RHEL and Rocky 8 system GCC).
 target_link_libraries(heapline-report PRIVATE
   $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.1>>:stdc++fs>)
+
+if(HEAPLINE_STATIC_RUNTIME)
+  target_link_options(heapline-report PRIVATE -static-libstdc++ -static-libgcc)
+endif()
 
 include(GNUInstallDirs)
 install(TARGETS heapline LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})

@@ -52,6 +52,12 @@ set_tests_properties(peak_threads PROPERTIES
                      TIMEOUT 30
                      SKIP_RETURN_CODE 77)
 
+# The library depends on the C library only, so it loads without libstdc++.
+add_test(NAME library_dependencies
+         COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/check_dependencies.sh
+                 $<TARGET_FILE:heapline>)
+set_tests_properties(library_dependencies PROPERTIES SKIP_RETURN_CODE 77)
+
 set(check_record ${CMAKE_CURRENT_SOURCE_DIR}/check_record.sh)
 set(lib $<TARGET_FILE:heapline>)
 set(prog $<TARGET_FILE:alloc_pattern>)
