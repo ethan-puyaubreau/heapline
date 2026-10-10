@@ -68,7 +68,16 @@ jobs:
             HEAPLINE_OUTPUT=$PWD/records/heapline.%h.%r.csv build/examples/mpi_imbalance
 
       - name: Summarize with heapline-report
-        run: build/heapline-report --csv merged.csv records | tee report.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          build/heapline-report --csv merged.csv records | tee report.txt
 
       - name: Check the peaks
         run: sh tests/check_example.sh merged.csv 4
+
+      - name: Run the first tutorial steps
+        run: |
+          LD_PRELOAD=$PWD/build/libheapline.so HEAPLINE_OUTPUT=run.csv \
+            python3 -c "x = [bytes(10**6) for i in range(300)]"
+          build/heapline-report run.csv

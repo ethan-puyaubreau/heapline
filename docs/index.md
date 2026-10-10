@@ -20,6 +20,8 @@ heaptrack or Valgrind's massif instead (see
 :maxdepth: 1
 
 getting-started
+tutorial
+mpi
 report
 format
 peak-memory
