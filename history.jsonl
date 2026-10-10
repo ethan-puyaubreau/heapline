@@ -1,1 +1,6 @@
 {"commit": "13a867b", "date": "2026-10-10T04:28:16Z", "cpu": "AMD EPYC 9V74 80-Core Processor", "runs": 10, "seconds_without": 1.1065, "seconds_with": 2.5280, "overhead": 1.2847, "allocs_per_s": 1.582e+07}
+{"scenario": "churn-1t", "commit": "00302b1", "date": "2026-10-10T18:43:26Z", "cpu": "INTEL(R) XEON(R) PLATINUM 8573C", "runs": 10, "seconds_without": 0.8816, "seconds_with": 1.0299, "overhead": 0.1682, "allocs_per_s": 9.71e+06}
+{"scenario": "churn-4t", "commit": "00302b1", "date": "2026-10-10T18:44:04Z", "cpu": "INTEL(R) XEON(R) PLATINUM 8573C", "runs": 10, "seconds_without": 1.2487, "seconds_with": 2.5233, "overhead": 1.0208, "allocs_per_s": 1.585e+07}
+{"scenario": "resident-4t", "commit": "00302b1", "date": "2026-10-10T18:44:32Z", "cpu": "INTEL(R) XEON(R) PLATINUM 8573C", "runs": 10, "seconds_without": 1.2479, "seconds_with": 1.5500, "overhead": 0.2421, "allocs_per_s": 2.581e+07}
+{"scenario": "large-4t", "commit": "00302b1", "date": "2026-10-10T18:45:28Z", "cpu": "INTEL(R) XEON(R) PLATINUM 8573C", "runs": 10, "seconds_without": 2.7071, "seconds_with": 2.9026, "overhead": 0.0723, "allocs_per_s": 3.445e+06}
+{"scenario": "python", "commit": "00302b1", "date": "2026-10-10T18:45:50Z", "cpu": "INTEL(R) XEON(R) PLATINUM 8573C", "runs": 10, "seconds_without": 1.0566, "seconds_with": 1.1161, "overhead": 0.0563, "allocs_per_s": 1.885e+06}
