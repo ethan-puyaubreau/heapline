@@ -59,30 +59,34 @@ std::atomic<uint64_t> alloc_count{0};
 std::atomic<uint64_t> free_count{0};
 
 /**
- * @brief Published bytes currently allocated, as reported by
- * malloc_usable_size. Registered threads hold back a bounded part of their
- * own changes, see ThreadCounters.
+ * @brief The globals that threads read or write on the allocation path. Each
+ * group sits on cache lines of its own, and the structure is padded to whole
+ * lines, so that no other variable shares a line with them and publishing does
+ * not slow down the reads of the others.
  *
- * Signed so that releasing blocks allocated outside of the tracked entry
- * points shows up as a negative value instead of wrapping around. Each global
- * read on the allocation path sits on its own cache line, so that publishing
- * does not slow down the reads of the others.
+ * live_bytes is the published bytes currently allocated, as reported by
+ * malloc_usable_size. Registered threads hold back a bounded part of their
+ * own changes, see ThreadCounters. It is signed so that releasing blocks
+ * allocated outside of the tracked entry points shows up as a negative value
+ * instead of wrapping around.
+ *
+ * peak_bytes is the highest value reached by live_bytes, and peak_time_ns the
+ * CLOCK_MONOTONIC_COARSE time, in nanoseconds, at which it was last raised
+ * with a time stamp. They are stored apart, so the two may briefly disagree.
+ *
+ * A registered thread holds back at most peak_bytes >> limit_shift bytes, for
+ * the limit_shift it last read. See shift_for() for the total.
  */
-alignas(64) std::atomic<int64_t> live_bytes{0};
+struct alignas(64) Shared {
+  alignas(64) std::atomic<int64_t> live_bytes{0};
+  alignas(64) std::atomic<int64_t> peak_bytes{0};
+  std::atomic<int64_t> peak_time_ns{0};
+  alignas(64) std::atomic<int> limit_shift{63};
+};
 
-/**
- * @brief Highest value reached by live_bytes, and the CLOCK_MONOTONIC_COARSE
- * time, in nanoseconds, at which it was last raised. Stored apart, so the two
- * may briefly disagree.
- */
-alignas(64) std::atomic<int64_t> peak_bytes{0};
-std::atomic<int64_t> peak_time_ns{0};
+static_assert(sizeof(Shared) == 192, "three cache lines, none shared");
 
-/**
- * @brief A registered thread holds back at most peak_bytes >> limit_shift
- * bytes, for the limit_shift it last read. See shift_for() for the total.
- */
-alignas(64) std::atomic<int> limit_shift{63};
+Shared shared;
 
 /**
  * @brief Counters of one thread, kept in a node of a pool outside of the
@@ -231,14 +235,15 @@ int shift_for(int64_t threads) {
  * known, so they raise the peak without moving its time.
  */
 void publish(int64_t delta, bool stamp) {
-  int64_t live = live_bytes.fetch_add(delta, std::memory_order_relaxed) + delta;
-  int64_t peak = peak_bytes.load(std::memory_order_relaxed);
+  int64_t live =
+      shared.live_bytes.fetch_add(delta, std::memory_order_relaxed) + delta;
+  int64_t peak = shared.peak_bytes.load(std::memory_order_relaxed);
   while (live > peak) {
-    if (peak_bytes.compare_exchange_weak(peak, live,
-                                         std::memory_order_relaxed)) {
+    if (shared.peak_bytes.compare_exchange_weak(peak, live,
+                                                std::memory_order_relaxed)) {
       if (stamp)
-        peak_time_ns.store(now_ns(CLOCK_MONOTONIC_COARSE),
-                           std::memory_order_relaxed);
+        shared.peak_time_ns.store(now_ns(CLOCK_MONOTONIC_COARSE),
+                                  std::memory_order_relaxed);
       break;
     }
   }
@@ -319,8 +324,8 @@ void register_thread() {
   if (node) {
     node->next = registry;
     registry   = node;
-    limit_shift.store(shift_for(++registered_threads),
-                      std::memory_order_relaxed);
+    shared.limit_shift.store(shift_for(++registered_threads),
+                             std::memory_order_relaxed);
     local = node;
   }
   pthread_mutex_unlock(&registry_mutex);
@@ -350,7 +355,8 @@ void retire(void* arg) {
   }
   counters->next = free_nodes;
   free_nodes     = counters;
-  limit_shift.store(shift_for(--registered_threads), std::memory_order_relaxed);
+  shared.limit_shift.store(shift_for(--registered_threads),
+                           std::memory_order_relaxed);
   pthread_mutex_unlock(&registry_mutex);
 }
 
@@ -377,8 +383,8 @@ void account(int64_t delta, bool is_alloc) {
   count.store(count.load(std::memory_order_relaxed) + 1,
               std::memory_order_relaxed);
   int64_t pending = counters->pending.load(std::memory_order_relaxed) + delta;
-  int64_t limit   = peak_bytes.load(std::memory_order_relaxed) >>
-                  limit_shift.load(std::memory_order_relaxed);
+  int64_t limit   = shared.peak_bytes.load(std::memory_order_relaxed) >>
+                  shared.limit_shift.load(std::memory_order_relaxed);
   if (pending > limit || pending < -limit) {
     counters->pending.store(0, std::memory_order_relaxed);
     publish(pending, true);
@@ -414,7 +420,7 @@ heapline_stats totals() {
   pthread_mutex_lock(&registry_mutex);
   stats.allocs     = alloc_count.load(std::memory_order_relaxed);
   stats.frees      = free_count.load(std::memory_order_relaxed);
-  stats.live_bytes = live_bytes.load(std::memory_order_relaxed);
+  stats.live_bytes = shared.live_bytes.load(std::memory_order_relaxed);
   for (ThreadCounters* counters = registry; counters;
        counters                 = counters->next) {
     stats.allocs += counters->allocs.load(std::memory_order_relaxed);
@@ -422,8 +428,8 @@ heapline_stats totals() {
     stats.live_bytes += counters->pending.load(std::memory_order_relaxed);
   }
   pthread_mutex_unlock(&registry_mutex);
-  stats.peak_bytes =
-      std::max(peak_bytes.load(std::memory_order_relaxed), stats.live_bytes);
+  stats.peak_bytes = std::max(shared.peak_bytes.load(std::memory_order_relaxed),
+                              stats.live_bytes);
   return stats;
 }
 
@@ -461,7 +467,8 @@ void reset_registry_in_child() {
   registry = mine;
   if (mine) mine->next = nullptr;
   registered_threads = mine ? 1 : 0;
-  limit_shift.store(shift_for(registered_threads), std::memory_order_relaxed);
+  shared.limit_shift.store(shift_for(registered_threads),
+                           std::memory_order_relaxed);
   pthread_mutex_unlock(&registry_mutex);
 }
 
@@ -559,7 +566,7 @@ __attribute__((destructor)) void finish() {
   record.frees           = stats.frees;
   record.peak_heap_bytes = stats.peak_bytes;
   record.peak_heap_time_s =
-      std::max<int64_t>(0, peak_time_ns.load() - start_ns) / 1e9;
+      std::max<int64_t>(0, shared.peak_time_ns.load() - start_ns) / 1e9;
   record.live_heap_at_exit_bytes = stats.live_bytes;
   record.vmhwm_bytes             = status.vmhwm_bytes;
   record.vmrss_at_exit_bytes     = status.vmrss_bytes;
