@@ -108,6 +108,15 @@ struct ThreadCounters {
 __attribute__((tls_model("initial-exec"))) thread_local ThreadCounters local;
 
 /**
+ * @brief Set while the calling thread holds registry_mutex for a fork, from
+ * the prepare handler of heapline to its handler in the parent or the child.
+ * Handlers of other libraries run in between and may allocate: the thread
+ * then counts in the globals and does not register, which would lock the
+ * mutex it already holds.
+ */
+__attribute__((tls_model("initial-exec"))) thread_local bool holds_registry;
+
+/**
  * @brief Registered threads and their number. registry_mutex also
  * serializes the exit of a thread with the computation of totals.
  */
@@ -243,7 +252,7 @@ void retire(void* arg);
  * needs a thread that made no counted operation earlier in its life.
  */
 void register_thread() {
-  if (!registry_ready.load(std::memory_order_acquire)) return;
+  if (holds_registry || !registry_ready.load(std::memory_order_acquire)) return;
   local.registered = true;
   pthread_mutex_lock(&registry_mutex);
   local.next = registry;
@@ -348,17 +357,19 @@ heapline_stats totals() {
 
 /**
  * @brief Fork handlers. lock_registry runs before the fork, so that no other
- * thread holds registry_mutex while the process forks; the forking thread is
- * registered first, since registering later would lock the mutex twice. The
- * parent then unlocks it, and the child resets the registry, see
- * reset_registry_in_child().
+ * thread holds registry_mutex while the process forks; until the parent
+ * unlocks it, or the child resets the registry (see reset_registry_in_child),
+ * the forking thread does not register, see holds_registry.
  */
 void lock_registry() {
-  if (!local.registered) register_thread();
   pthread_mutex_lock(&registry_mutex);
+  holds_registry = true;
 }
 
-void unlock_registry() { pthread_mutex_unlock(&registry_mutex); }
+void unlock_registry() {
+  holds_registry = false;
+  pthread_mutex_unlock(&registry_mutex);
+}
 
 /**
  * @brief Fork handler of the child, where only the forking thread exists.
@@ -380,6 +391,7 @@ void reset_registry_in_child() {
   local.next         = nullptr;
   registered_threads = local.own ? 1 : 0;
   limit_shift.store(shift_for(registered_threads), std::memory_order_relaxed);
+  holds_registry = false;
   pthread_mutex_unlock(&registry_mutex);
 }
 
