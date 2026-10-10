@@ -28,15 +28,26 @@ ctest --test-dir build --output-on-failure
 
 ## Output
 
-The summary goes to stderr. Set `HEAPLINE_OUTPUT` to write it to a file
-instead; `%p` in the name is replaced with the process id, so each MPI rank
-gets its own file:
+A one-line summary always goes to stderr. Set `HEAPLINE_OUTPUT` to also write
+a record of the process as CSV, read by `heapline-report`, pandas or a
+spreadsheet:
 
 ```
-mpirun -n 4 env HEAPLINE_OUTPUT=heapline.%p.txt LD_PRELOAD=$PWD/libheapline.so ./app
+# heapline 1
+rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,vmrss_at_exit_bytes
+3,node-a,51234,1655310,12.480,4153,4123,302268416,4.211,483532,331431936,9175040
 ```
 
-If the file cannot be opened, the summary falls back to stderr.
+In the file name, `%p` is replaced with the process id, `%r` with the MPI
+rank and `%h` with the host name, so each rank gets its own file:
+
+```
+mpirun -n 4 env HEAPLINE_OUTPUT=heapline.%h.%r.csv LD_PRELOAD=$PWD/libheapline.so ./app
+```
+
+The rank is read from `SLURM_PROCID`, `OMPI_COMM_WORLD_RANK`, `PMI_RANK`,
+`PMIX_RANK` or `MV2_COMM_WORLD_RANK`, in this order, and is -1 outside MPI.
+If the file cannot be opened, the record goes to stderr.
 
 ## How it works
 
@@ -56,8 +67,8 @@ If the file cannot be opened, the summary falls back to stderr.
 - Programs using another allocator, such as jemalloc or tcmalloc, bypass
   heapline.
 - Sizes are usable sizes, slightly above the requested sizes.
-- Without `HEAPLINE_OUTPUT`, the summary is lost when the program closes
-  stderr before exiting, as GNU coreutils do.
+- The summary on stderr is lost when the program closes stderr before
+  exiting, as GNU coreutils do. The record written to `HEAPLINE_OUTPUT` is not.
 
 ## License
 

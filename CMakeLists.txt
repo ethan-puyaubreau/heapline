@@ -11,8 +11,8 @@ option(HEAPLINE_ENABLE_TESTS "Build the tests" ON)
 add_compile_options(-Wall -Wextra -Wpedantic
                     $<$<BOOL:${HEAPLINE_ENABLE_WERROR}>:-Werror>)
 
-add_library(heapline SHARED src/heapline.cpp)
-target_include_directories(heapline PUBLIC include)
+add_library(heapline SHARED src/heapline.cpp src/record.cpp)
+target_include_directories(heapline PUBLIC include PRIVATE src)
 target_link_libraries(heapline PRIVATE ${CMAKE_DL_LIBS})
 
 include(GNUInstallDirs)

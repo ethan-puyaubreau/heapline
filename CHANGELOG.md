@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The record written to `HEAPLINE_OUTPUT` holds the MPI rank, the host, the
+  Slurm job id, the time of the heap peak and the peak resident set size
+  (`VmHWM`) of the process.
+- `%r` and `%h` in `HEAPLINE_OUTPUT` expand to the rank and the host name.
+
+### Changed
+
+- **Breaking:** `HEAPLINE_OUTPUT` now receives a versioned CSV record instead
+  of the one-line summary, which always goes to stderr. Scripts that read the
+  summary from the file should read stderr or the CSV columns instead.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

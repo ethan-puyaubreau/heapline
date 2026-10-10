@@ -8,14 +8,24 @@ add_test(NAME alloc_pattern COMMAND alloc_pattern)
 set_tests_properties(alloc_pattern PROPERTIES
                      ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>)
 
-# Run under a %p file pattern and expect exactly one summary file, named after
-# the process id.
-add_test(NAME output_file
-         COMMAND sh -c "rm -f summary.*.txt \
-           && LD_PRELOAD=\"$1\" HEAPLINE_OUTPUT=summary.%p.txt \"$2\" \
-           && test $(ls summary.[0-9]*.txt | wc -l) -eq 1 \
-           && grep -q '^heapline: ' summary.[0-9]*.txt"
-                 sh $<TARGET_FILE:heapline> $<TARGET_FILE:alloc_pattern>)
+set(check_record ${CMAKE_CURRENT_SOURCE_DIR}/check_record.sh)
+set(lib $<TARGET_FILE:heapline>)
+set(prog $<TARGET_FILE:alloc_pattern>)
+add_test(NAME record_no_rank COMMAND sh ${check_record} ${lib} ${prog} -1)
+add_test(NAME record_slurm_rank
+         COMMAND sh ${check_record} ${lib} ${prog} 3 SLURM_PROCID=3)
+add_test(NAME record_ompi_rank
+         COMMAND sh ${check_record} ${lib} ${prog} 5 OMPI_COMM_WORLD_RANK=5)
+add_test(NAME record_rank_priority
+         COMMAND sh ${check_record} ${lib} ${prog} 3
+                 OMPI_COMM_WORLD_RANK=5 SLURM_PROCID=3)
+
+# When the file cannot be opened, the record goes to stderr.
+add_test(NAME record_fallback
+         COMMAND sh -c "LD_PRELOAD=\"$1\" \
+           HEAPLINE_OUTPUT=/nonexistent/dir/record.csv \"$2\" 2>&1 \
+           | grep -q '^# heapline 1$'"
+                 sh ${lib} ${prog})
 
 # Pure helpers of the library, tested without preloading it.
 add_executable(record_test record_test.cpp ${PROJECT_SOURCE_DIR}/src/record.cpp)

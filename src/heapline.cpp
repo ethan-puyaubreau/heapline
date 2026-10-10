@@ -5,10 +5,12 @@
 #endif
 
 #include "heapline.h"
+#include "record.h"
 
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <malloc.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -69,6 +71,27 @@ std::atomic<int64_t> live_bytes{0};
 std::atomic<int64_t> peak_bytes{0};
 
 /**
+ * @brief CLOCK_MONOTONIC_COARSE time, in nanoseconds, at which peak_bytes was
+ * last raised. Stored apart from peak_bytes, so the two may briefly disagree.
+ */
+std::atomic<int64_t> peak_time_ns{0};
+
+/**
+ * @brief CLOCK_MONOTONIC time, in nanoseconds, at which the library was
+ * loaded.
+ */
+int64_t start_ns = 0;
+
+/**
+ * @brief Current time of @p clock in nanoseconds.
+ */
+int64_t now_ns(clockid_t clock) {
+  timespec ts{};
+  clock_gettime(clock, &ts);
+  return static_cast<int64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
+}
+
+/**
  * @brief Arena serving allocations made while the real allocator is being
  * resolved, since dlsym itself may allocate.
  */
@@ -117,7 +140,10 @@ void resolve() {
   resolving     = false;
 }
 
-__attribute__((constructor)) void init() { resolve(); }
+__attribute__((constructor)) void init() {
+  start_ns = now_ns(CLOCK_MONOTONIC);
+  resolve();
+}
 
 /**
  * @brief Account for a new block.
@@ -131,8 +157,13 @@ void record_alloc(void* ptr) {
   auto size    = static_cast<int64_t>(malloc_usable_size(ptr));
   int64_t live = live_bytes.fetch_add(size, std::memory_order_relaxed) + size;
   int64_t peak = peak_bytes.load(std::memory_order_relaxed);
-  while (live > peak && !peak_bytes.compare_exchange_weak(
-                            peak, live, std::memory_order_relaxed)) {
+  while (live > peak) {
+    if (peak_bytes.compare_exchange_weak(peak, live,
+                                         std::memory_order_relaxed)) {
+      peak_time_ns.store(now_ns(CLOCK_MONOTONIC_COARSE),
+                         std::memory_order_relaxed);
+      break;
+    }
   }
 }
 
@@ -163,58 +194,74 @@ void format_bytes(char* buf, size_t len, int64_t bytes) {
 }
 
 /**
- * @brief Copy @p pattern into @p buf, replacing each %p with the process id.
+ * @brief Print the one-line summary of @p record to stderr.
  */
-void expand_path(char* buf, size_t len, const char* pattern) {
-  size_t out = 0;
-  for (const char* c = pattern; *c && out + 1 < len; ++c) {
-    if (c[0] == '%' && c[1] == 'p') {
-      int n = std::snprintf(buf + out, len - out, "%d", getpid());
-      if (n < 0) break;
-      out = std::min<size_t>(out + n, len - 1);
-      ++c;
-    } else {
-      buf[out++] = *c;
-    }
-  }
-  buf[out] = '\0';
-}
-
-/**
- * @brief Open the summary destination: the file named by HEAPLINE_OUTPUT when
- * set, stderr otherwise or when the file cannot be opened.
- */
-int open_output() {
-  const char* pattern = getenv("HEAPLINE_OUTPUT");
-  if (!pattern || !*pattern) return STDERR_FILENO;
-  char path[PATH_MAX];
-  expand_path(path, sizeof(path), pattern);
-  int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-  return fd < 0 ? STDERR_FILENO : fd;
-}
-
-/**
- * @brief Print the counters when the library is unloaded.
- *
- * Writes with snprintf and write rather than stdio streams, which may
- * allocate or already be closed at this point.
- */
-__attribute__((destructor)) void print_summary() {
+void print_summary(const heapline::Record& record) {
   char peak[32];
   char live[32];
   char line[160];
-  format_bytes(peak, sizeof(peak), peak_bytes.load());
-  format_bytes(live, sizeof(live), live_bytes.load());
+  format_bytes(peak, sizeof(peak), record.peak_heap_bytes);
+  format_bytes(live, sizeof(live), record.live_heap_at_exit_bytes);
   int len = std::snprintf(
       line, sizeof(line),
       "heapline: %llu allocs, %llu frees, peak %s, live at exit %s\n",
-      static_cast<unsigned long long>(alloc_count.load()),
-      static_cast<unsigned long long>(free_count.load()), peak, live);
+      static_cast<unsigned long long>(record.allocs),
+      static_cast<unsigned long long>(record.frees), peak, live);
   if (len <= 0) return;
-  int fd = open_output();
   [[maybe_unused]] ssize_t written =
-      write(fd, line, std::min<size_t>(len, sizeof(line) - 1));
-  if (fd != STDERR_FILENO) close(fd);
+      write(STDERR_FILENO, line, std::min<size_t>(len, sizeof(line) - 1));
+}
+
+/**
+ * @brief Write @p record as CSV to the file named by HEAPLINE_OUTPUT, or to
+ * stderr when that file cannot be opened. Does nothing when HEAPLINE_OUTPUT
+ * is not set.
+ */
+void write_record(const heapline::Record& record) {
+  const char* pattern = getenv("HEAPLINE_OUTPUT");
+  if (!pattern || !*pattern) return;
+  char text[1024];
+  int len = heapline::format_record(text, sizeof(text), record);
+  if (len < 0) return;
+  char path[PATH_MAX];
+  heapline::expand_path(path, sizeof(path), pattern, record.pid, record.rank,
+                        record.host);
+  int fd  = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+  int out = fd < 0 ? STDERR_FILENO : fd;
+  [[maybe_unused]] ssize_t written = write(out, text, len);
+  if (fd >= 0) close(fd);
+}
+
+/**
+ * @brief Gather the final counters when the library is unloaded, print the
+ * summary and write the record.
+ *
+ * Uses stack buffers, snprintf and write rather than stdio streams, which may
+ * allocate or already be closed at this point.
+ */
+__attribute__((destructor)) void finish() {
+  char host[256] = "";
+  gethostname(host, sizeof(host) - 1);
+  const char* job             = getenv("SLURM_JOB_ID");
+  heapline::ProcStatus status = heapline::read_status();
+
+  heapline::Record record;
+  record.rank = heapline::find_rank(
+      +[](const char* name) -> const char* { return getenv(name); });
+  record.host            = host;
+  record.pid             = getpid();
+  record.job             = job ? job : "";
+  record.elapsed_s       = (now_ns(CLOCK_MONOTONIC) - start_ns) / 1e9;
+  record.allocs          = alloc_count.load();
+  record.frees           = free_count.load();
+  record.peak_heap_bytes = peak_bytes.load();
+  record.peak_heap_time_s =
+      std::max<int64_t>(0, peak_time_ns.load() - start_ns) / 1e9;
+  record.live_heap_at_exit_bytes = live_bytes.load();
+  record.vmhwm_bytes             = status.vmhwm_bytes;
+  record.vmrss_at_exit_bytes     = status.vmrss_bytes;
+  print_summary(record);
+  write_record(record);
 }
 
 }  // namespace
