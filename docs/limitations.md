@@ -14,7 +14,7 @@
 - The summary on stderr is lost when the program closes stderr before
   exiting, as GNU coreutils do. The record written to `HEAPLINE_OUTPUT` is not.
 - The cost is paid on every allocation. On a benchmark that does nothing but
-  allocate and release from four threads, heapline makes the program four to
+  allocate and release from four threads, heapline makes the program about
   five times slower; programs that compute between allocations see much
   less. See [Performance history](performance.md).
 

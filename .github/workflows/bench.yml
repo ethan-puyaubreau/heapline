@@ -29,10 +29,15 @@ jobs:
           cmake --build build --parallel
 
       - name: Measure
-        run: sh bench/run_overhead.sh build/bench/malloc_churn build/libheapline.so 10 | tee point.json
+        shell: bash
+        run: |
+          set -o pipefail
+          sh bench/run_overhead.sh build/bench/malloc_churn build/libheapline.so 10 | tee point.json
 
       - name: Append to bench-data
+        shell: bash
         run: |
+          test -s point.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if git fetch origin bench-data; then

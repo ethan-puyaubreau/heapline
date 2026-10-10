@@ -5,20 +5,53 @@ docs/_generated/performance.md, plus performance.svg when there is data.
 """
 
 import json
+import math
 import pathlib
 import sys
 
 OUT = pathlib.Path(__file__).parent / "_generated"
 WIDTH, HEIGHT = 640, 260
 LEFT, RIGHT, TOP, BOTTOM = 56, 16, 16, 40
+NUMBERS = ("overhead", "allocs_per_s")
+STRINGS = ("commit", "date", "cpu")
+
+
+def valid(point):
+    """Tell whether a parsed line holds every field the page needs."""
+    if not isinstance(point, dict):
+        return False
+    for key in NUMBERS:
+        value = point.get(key)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            return False
+    return all(isinstance(point.get(key), str) for key in STRINGS)
 
 
 def load(path):
+    """Return the valid points of the history and the number of lines skipped
+    because they are not JSON or miss a field."""
     history = pathlib.Path(path) if path else None
     if history is None or not history.exists():
-        return []
-    lines = history.read_text(encoding="utf-8").splitlines()
-    return [json.loads(line) for line in lines if line.strip()]
+        return [], 0
+    points, skipped = [], 0
+    text = history.read_text(encoding="utf-8", errors="replace")
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            point = json.loads(line)
+        except (ValueError, RecursionError):
+            skipped += 1
+            continue
+        if valid(point):
+            points.append(point)
+        else:
+            skipped += 1
+    return points, skipped
 
 
 def svg(points):
@@ -28,7 +61,9 @@ def svg(points):
         high = low + 1
 
     def x(i):
-        return LEFT + (WIDTH - LEFT - RIGHT) * i / max(1, len(values) - 1)
+        if len(values) == 1:
+            return (LEFT + WIDTH - RIGHT) / 2
+        return LEFT + (WIDTH - LEFT - RIGHT) * i / (len(values) - 1)
 
     def y(v):
         return TOP + (HEIGHT - TOP - BOTTOM) * (1 - (v - low) / (high - low))
@@ -52,6 +87,10 @@ def svg(points):
     parts.append(
         f'<polyline points="{line}" fill="none" stroke="#000" stroke-width="1.5"/>'
     )
+    for i, v in enumerate(values):
+        parts.append(
+            f'<circle cx="{x(i):.1f}" cy="{y(v):.1f}" r="2.5" fill="#000"/>'
+        )
     parts.append(
         f'<line x1="{LEFT}" x2="{LEFT}" y1="{TOP}" y2="{HEIGHT - BOTTOM}" stroke="#000"/>'
     )
@@ -61,7 +100,7 @@ def svg(points):
     )
     parts.append(
         f'<text x="{(LEFT + WIDTH - RIGHT) / 2:.0f}" y="{HEIGHT - 10}" '
-        'text-anchor="middle">Commits on main, oldest to newest</text>'
+        'text-anchor="middle">Measurements, oldest to newest</text>'
     )
     parts.append(
         f'<text transform="translate(14 {(TOP + HEIGHT - BOTTOM) / 2:.0f}) '
@@ -85,14 +124,19 @@ def table(points):
 
 
 def main(path):
-    points = load(path)
+    points, skipped = load(path)
+    if skipped:
+        print(
+            f"::warning::{skipped} line(s) of the overhead history were "
+            "skipped (not JSON or missing a field)"
+        )
     OUT.mkdir(exist_ok=True)
     if not points:
         (OUT / "performance.md").write_text("No measurement yet.\n", encoding="utf-8")
         return
     (OUT / "performance.svg").write_text(svg(points), encoding="utf-8")
     (OUT / "performance.md").write_text(
-        "![Overhead of heapline on malloc_churn, per commit](performance.svg)\n\n"
+        "![Overhead of heapline on malloc_churn, per measurement](performance.svg)\n\n"
         + table(points),
         encoding="utf-8",
     )
