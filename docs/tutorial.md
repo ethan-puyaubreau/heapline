@@ -51,6 +51,10 @@ mpirun -n 4 env LD_PRELOAD=$PWD/build/libheapline.so HEAPLINE_OUTPUT=$PWD/record
 `env` sets the variables in each rank only, not in `mpirun` itself. `%h` and
 `%r` give each rank its own file.
 
+With Open MPI on a machine with fewer than four cores, `mpirun` refuses to
+start four ranks unless you add `--oversubscribe` after it (MPICH has no such
+option).
+
 ## 5. Read the job report
 
 ```
@@ -91,8 +95,12 @@ bottom:
   allocated by MPI. The imbalance, about 1.6, says the busiest rank uses 1.6
   times the average.
 - **Per node**: the sum of `VmHWM` over the ranks of each node.
-- **Ranks by peak heap**: the ratio of heap to `VmHWM` stays close to 1 here,
-  because the example writes all the memory it allocates.
+- **Ranks by peak heap**: `VmHWM` exceeds the heap peak by about 11 MiB on
+  every rank. This constant gap is the memory heapline does not count as heap:
+  code, libraries, stacks and the shared memory MPI maps. It weighs more on a
+  small heap, which is why the ratio of heap to `VmHWM` is 0.96 on rank 3 and
+  only about 0.86 on rank 0. The example writes all the memory it allocates,
+  so its heap is entirely resident and the ratio is high at all.
 
 ## 6. Size the job
 
@@ -101,6 +109,10 @@ one if the job spans several nodes, and add the margin your site recommends.
 Since ranks do not always peak at the same time, the sum is an upper bound:
 safe, sometimes generous. The imbalance tells whether the work, or the data,
 could be spread better between ranks.
+
+For the job above, all on one node, the sum is 698.6 MiB. With a margin of
+10 % (take the one your site recommends) that makes 768.5 MiB, which rounds
+up to `--mem=800M`.
 
 ## 7. When the numbers do not match Slurm
 

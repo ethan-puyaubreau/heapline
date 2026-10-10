@@ -48,8 +48,8 @@ rank and `%h` with the host name, so each rank gets its own file:
 mpirun -n 4 env HEAPLINE_OUTPUT=heapline.%h.%r.csv LD_PRELOAD=$PWD/libheapline.so ./app
 ```
 
-The rank is read from `SLURM_PROCID`, `OMPI_COMM_WORLD_RANK`, `PMI_RANK`,
-`PMIX_RANK` or `MV2_COMM_WORLD_RANK`, in this order, and is -1 outside MPI.
+The rank is read from `OMPI_COMM_WORLD_RANK`, `PMIX_RANK`, `PMI_RANK`,
+`MV2_COMM_WORLD_RANK` or `SLURM_PROCID`, in this order, and is -1 outside MPI.
 If the file cannot be opened, the record goes to stderr.
 
 ## Job report

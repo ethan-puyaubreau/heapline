@@ -13,8 +13,9 @@ ctest --test-dir build --output-on-failure
 ```
 
 This builds `build/libheapline.so` and `build/heapline-report`.
-`cmake --install build --prefix <dir>` installs them under `<dir>/lib` and
-`<dir>/bin`.
+To install them, run `cmake --install build --prefix $HOME/opt/heapline`: the
+library goes to `$HOME/opt/heapline/lib` (`lib64` on some distributions, such
+as RHEL, Rocky or SUSE) and `heapline-report` to `$HOME/opt/heapline/bin`.
 
 ## Run a program under heapline
 

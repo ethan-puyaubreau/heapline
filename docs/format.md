@@ -21,7 +21,7 @@ changing the meaning of one raises the version.
 
 | Column | Unit | Meaning |
 |---|---|---|
-| `rank` | | MPI rank from `SLURM_PROCID`, `OMPI_COMM_WORLD_RANK`, `PMI_RANK`, `PMIX_RANK` or `MV2_COMM_WORLD_RANK`, in this order; -1 outside MPI |
+| `rank` | | MPI rank from `OMPI_COMM_WORLD_RANK`, `PMIX_RANK`, `PMI_RANK`, `MV2_COMM_WORLD_RANK` or `SLURM_PROCID`, in this order; -1 outside MPI |
 | `host` | | Host name; commas, quotes and line breaks are replaced with `_` |
 | `pid` | | Process id |
 | `job` | | `SLURM_JOB_ID`, empty outside Slurm |
