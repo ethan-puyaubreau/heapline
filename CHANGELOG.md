@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `heapline_get_stats` no longer reports a lower peak than on a previous call.
+- The time of the heap peak is no longer moved when a thread publishes bytes
+  it had held back.
 
 ## [0.4.0] - 2026-10-10
 

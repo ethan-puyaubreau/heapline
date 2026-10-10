@@ -377,6 +377,14 @@ void retire(void* arg) {
  *
  * The usable size is read back from the allocator, so no table of live
  * pointers is needed and nothing is allocated on this path.
+ *
+ * When the operation takes the thread beyond its limit, the bytes held back
+ * before it and the operation are published with one atomic addition, but
+ * the peak is raised in two steps: to the live bytes without the operation,
+ * which moves no time, then to the live bytes with it. The held bytes date
+ * from an earlier moment that is not known, for example from before the
+ * limit dropped to 0 as other threads exited: they must not move the time of
+ * the peak, which only the operation, happening now, may do.
  */
 void account(int64_t delta, bool is_alloc) {
   ThreadCounters* counters = local;
@@ -393,12 +401,17 @@ void account(int64_t delta, bool is_alloc) {
   std::atomic<uint64_t>& count = is_alloc ? counters->allocs : counters->frees;
   count.store(count.load(std::memory_order_relaxed) + 1,
               std::memory_order_relaxed);
-  int64_t pending = counters->pending.load(std::memory_order_relaxed) + delta;
+  int64_t held    = counters->pending.load(std::memory_order_relaxed);
+  int64_t pending = held + delta;
   int64_t limit   = shared.peak_bytes.load(std::memory_order_relaxed) >>
                   shared.limit_shift.load(std::memory_order_relaxed);
   if (pending > limit || pending < -limit) {
     counters->pending.store(0, std::memory_order_relaxed);
-    publish(pending, true);
+    int64_t live =
+        shared.live_bytes.fetch_add(pending, std::memory_order_relaxed) +
+        pending;
+    if (held != 0) raise_peak(live - delta, false);
+    raise_peak(live, true);
   } else {
     counters->pending.store(pending, std::memory_order_relaxed);
   }
