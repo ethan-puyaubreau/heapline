@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(HEAPLINE_ENABLE_WERROR "Treat compiler warnings as errors" OFF)
 option(HEAPLINE_ENABLE_TESTS "Build the tests" ON)
+option(HEAPLINE_ENABLE_BENCH "Build the overhead benchmark" OFF)
 
 add_compile_options(-Wall -Wextra -Wpedantic
                     $<$<BOOL:${HEAPLINE_ENABLE_WERROR}>:-Werror>)
@@ -27,4 +28,8 @@ install(TARGETS heapline-report RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(HEAPLINE_ENABLE_TESTS)
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+if(HEAPLINE_ENABLE_BENCH)
+  add_subdirectory(bench)
 endif()
