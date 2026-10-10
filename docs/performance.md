@@ -21,12 +21,13 @@ Measured on one machine, under WSL2, with
 `sh bench/run_overhead.sh build/bench/malloc_churn <lib> 10`. Each figure is
 the median overhead of three rounds of ten runs each, alternating the two
 libraries, with the same `malloc_churn` binary for both. Single rounds ranged
-from 377% to 417%.
+from 377% to 417%. The 0.3.0 figure was measured at commit 6a12b65, whose
+library code is the released one.
 
 | Version | Overhead on malloc_churn | Machine |
 |---|---:|---|
 | 0.2.0 | 409% | Intel Core i7-10700F, 2.90 GHz |
-| 0.3.0 development build | 402% | Intel Core i7-10700F, 2.90 GHz |
+| 0.3.0 | 402% | Intel Core i7-10700F, 2.90 GHz |
 
 No difference beyond the noise of the measurement was detected between the
 two versions.

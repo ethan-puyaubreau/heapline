@@ -38,6 +38,8 @@ jobs:
         run: |
           name="heapline-v$VERSION-linux-x86_64"
           cmake --install build --prefix "$name"
+          test -x "$name/bin/heapline-report"
+          "$name/bin/heapline-report" --version
           cp README.md LICENSE "$name/"
           tar czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
