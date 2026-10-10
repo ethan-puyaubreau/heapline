@@ -32,13 +32,21 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          sh bench/run_overhead.sh build/bench/malloc_churn build/libheapline.so 10 | tee point.json
+          lib=$PWD/build/libheapline.so
+          churn=$PWD/build/bench/malloc_churn
+          run() { sh bench/run_overhead.sh "$1" "$lib" 10 -- "${@:2}" | tee -a points.jsonl; }
+          : >points.jsonl
+          run churn-1t "$churn" 1 10000000
+          run churn-4t "$churn" 4 10000000
+          run resident-4t "$churn" 4 10000000 16 4096 512
+          run large-4t "$churn" 4 2500000 65536 1048576
+          run python python3 bench/python_churn.py
 
       - name: Append to bench-data
         if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          test -s point.json
+          test "$(wc -l <points.jsonl)" -eq 5
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if git fetch origin bench-data; then
@@ -48,7 +56,7 @@ jobs:
             git worktree add --detach data
             git -C data switch --orphan bench-data
           fi
-          cat point.json >> data/history.jsonl
+          cat points.jsonl >> data/history.jsonl
           python3 bench/check_regression.py data/history.jsonl
           git -C data add history.jsonl
           git -C data commit -m "bench: add ${GITHUB_SHA::7}"

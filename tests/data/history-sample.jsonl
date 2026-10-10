@@ -1,3 +1,5 @@
 {"commit": "aaaaaaa", "date": "2026-10-10T10:00:00Z", "cpu": "Test CPU", "runs": 10, "seconds_without": 0.5000, "seconds_with": 0.5150, "overhead": 0.0300, "allocs_per_s": 1.553e+07}
 {"commit": "bbbbbbb", "date": "2026-10-11T10:00:00Z", "cpu": "Test CPU", "runs": 10, "seconds_without": 0.5000, "seconds_with": 0.5200, "overhead": 0.0400, "allocs_per_s": 1.538e+07}
 {"commit": "ccccccc", "date": "2026-10-12T10:00:00Z", "cpu": "Test CPU", "runs": 10, "seconds_without": 0.5000, "seconds_with": 0.5100, "overhead": 0.0200, "allocs_per_s": 1.569e+07}
+{"scenario": "churn-1t", "commit": "ddddddd", "date": "2026-10-12T10:00:00Z", "cpu": "Test CPU", "runs": 10, "seconds_without": 0.5000, "seconds_with": 0.5600, "overhead": 0.1200, "allocs_per_s": 1.786e+07}
+{"scenario": "python", "commit": "ddddddd", "date": "2026-10-12T10:00:00Z", "cpu": "Test CPU", "runs": 10, "seconds_without": 1.1000, "seconds_with": 1.1300, "overhead": 0.0273, "allocs_per_s": 1.75e+06}

@@ -39,7 +39,8 @@ jobs:
       - name: Check the performance page generator
         run: |
           python3 docs/perf_history.py tests/data/history-sample.jsonl
-          test -s docs/_generated/performance.svg
+          test -s docs/_generated/performance-churn-4t.svg
+          test -s docs/_generated/performance-python.svg
 
       - name: Render the performance history
         run: |
