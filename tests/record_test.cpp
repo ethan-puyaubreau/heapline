@@ -42,6 +42,7 @@ void test_find_rank() {
   const char* mv2[]      = {"MV2_COMM_WORLD_RANK", "11", nullptr};
   const char* both[]     = {"OMPI_COMM_WORLD_RANK", "5", "SLURM_PROCID", "3",
                             nullptr};
+  const char* batch[]    = {"PMI_RANK", "7", "SLURM_PROCID", "0", nullptr};
   const char* invalid[]  = {"SLURM_PROCID", "x", "PMI_RANK", "2", nullptr};
   const char* empty[]    = {"SLURM_PROCID", "", nullptr};
   const char* negative[] = {"SLURM_PROCID", "-1", nullptr};
@@ -51,7 +52,8 @@ void test_find_rank() {
   check(rank_with(pmi) == 7, "PMI_RANK");
   check(rank_with(pmix) == 9, "PMIX_RANK");
   check(rank_with(mv2) == 11, "MV2_COMM_WORLD_RANK");
-  check(rank_with(both) == 3, "SLURM_PROCID wins over OMPI_COMM_WORLD_RANK");
+  check(rank_with(both) == 5, "the launcher rank wins over SLURM_PROCID");
+  check(rank_with(batch) == 7, "PMI_RANK wins over an inherited SLURM_PROCID");
   check(rank_with(invalid) == 2, "an invalid value is skipped");
   check(rank_with(empty) == -1, "an empty value is skipped");
   check(rank_with(negative) == -1, "a negative value is skipped");

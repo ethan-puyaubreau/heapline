@@ -17,7 +17,7 @@ add_test(NAME record_slurm_rank
 add_test(NAME record_ompi_rank
          COMMAND sh ${check_record} ${lib} ${prog} 5 OMPI_COMM_WORLD_RANK=5)
 add_test(NAME record_rank_priority
-         COMMAND sh ${check_record} ${lib} ${prog} 3
+         COMMAND sh ${check_record} ${lib} ${prog} 5
                  OMPI_COMM_WORLD_RANK=5 SLURM_PROCID=3)
 
 # When the file cannot be opened, the record goes to stderr.

@@ -76,9 +76,9 @@ long long to_millis(double seconds) {
 }  // namespace
 
 long find_rank(EnvLookup lookup) {
-  static const char* const names[] = {"SLURM_PROCID", "OMPI_COMM_WORLD_RANK",
-                                      "PMI_RANK", "PMIX_RANK",
-                                      "MV2_COMM_WORLD_RANK"};
+  static const char* const names[] = {"OMPI_COMM_WORLD_RANK", "PMIX_RANK",
+                                      "PMI_RANK", "MV2_COMM_WORLD_RANK",
+                                      "SLURM_PROCID"};
   for (const char* name : names) {
     const char* value = lookup(name);
     if (!value || !*value) continue;

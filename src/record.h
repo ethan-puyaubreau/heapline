@@ -17,9 +17,12 @@ using EnvLookup = const char* (*)(const char*);
 /**
  * @brief Rank of the process in an MPI job.
  *
- * Reads SLURM_PROCID, OMPI_COMM_WORLD_RANK, PMI_RANK, PMIX_RANK and
- * MV2_COMM_WORLD_RANK in this order and returns the first value that is a
+ * Reads OMPI_COMM_WORLD_RANK, PMIX_RANK, PMI_RANK, MV2_COMM_WORLD_RANK and
+ * SLURM_PROCID in this order and returns the first value that is a
  * non-negative integer. Empty or invalid values are skipped.
+ *
+ * SLURM_PROCID comes last because the ranks started by mpirun inside a Slurm
+ * allocation inherit the one of the batch script (0), which is not their rank.
  *
  * @return The rank, or -1 when the process is not part of an MPI job.
  */
