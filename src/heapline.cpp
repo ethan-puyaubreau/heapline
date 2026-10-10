@@ -233,15 +233,20 @@ int shift_for(int64_t threads) {
 
 /**
  * @brief Add @p delta to live_bytes and raise the peak if needed.
+ *
+ * The time of the peak is stored only when @p stamp is set. Bytes folded in
+ * from the counters of a thread were held since an earlier moment that is not
+ * known, so they raise the peak without moving its time.
  */
-void publish(int64_t delta) {
+void publish(int64_t delta, bool stamp) {
   int64_t live = live_bytes.fetch_add(delta, std::memory_order_relaxed) + delta;
   int64_t peak = peak_bytes.load(std::memory_order_relaxed);
   while (live > peak) {
     if (peak_bytes.compare_exchange_weak(peak, live,
                                          std::memory_order_relaxed)) {
-      peak_time_ns.store(now_ns(CLOCK_MONOTONIC_COARSE),
-                         std::memory_order_relaxed);
+      if (stamp)
+        peak_time_ns.store(now_ns(CLOCK_MONOTONIC_COARSE),
+                           std::memory_order_relaxed);
       break;
     }
   }
@@ -256,7 +261,7 @@ void publish_own() {
   int64_t pending = counters->pending.load(std::memory_order_relaxed);
   if (pending == 0) return;
   counters->pending.store(0, std::memory_order_relaxed);
-  publish(pending);
+  publish(pending, false);
 }
 
 /**
@@ -328,7 +333,7 @@ void retire(void* arg) {
   auto* counters = static_cast<ThreadCounters*>(arg);
   local          = nullptr;
   pthread_mutex_lock(&registry_mutex);
-  publish(counters->pending.load(std::memory_order_relaxed));
+  publish(counters->pending.load(std::memory_order_relaxed), false);
   alloc_count.fetch_add(counters->allocs.load(std::memory_order_relaxed),
                         std::memory_order_relaxed);
   free_count.fetch_add(counters->frees.load(std::memory_order_relaxed),
@@ -360,7 +365,7 @@ void account(int64_t delta, bool is_alloc) {
     if (!counters) {
       (is_alloc ? alloc_count : free_count)
           .fetch_add(1, std::memory_order_relaxed);
-      publish(delta);
+      publish(delta, true);
       return;
     }
   }
@@ -372,7 +377,7 @@ void account(int64_t delta, bool is_alloc) {
                   limit_shift.load(std::memory_order_relaxed);
   if (pending > limit || pending < -limit) {
     counters->pending.store(0, std::memory_order_relaxed);
-    publish(pending);
+    publish(pending, true);
   } else {
     counters->pending.store(pending, std::memory_order_relaxed);
   }
@@ -446,7 +451,7 @@ void reset_registry_in_child() {
   while (node) {
     ThreadCounters* next = node->next;
     if (node != mine) {
-      publish(node->pending.load(std::memory_order_relaxed));
+      publish(node->pending.load(std::memory_order_relaxed), false);
       alloc_count.fetch_add(node->allocs.load(std::memory_order_relaxed),
                             std::memory_order_relaxed);
       free_count.fetch_add(node->frees.load(std::memory_order_relaxed),

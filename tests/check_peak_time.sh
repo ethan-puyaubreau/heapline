@@ -1,6 +1,7 @@
 #!/bin/sh
-# Run peak_time under heapline and check when the heap peak was reached.
-# Usage: check_peak_time.sh LIBHEAPLINE PROGRAM early|late
+# Run a peak test program under heapline and check when the heap peak was
+# reached: peak_time with early or late, peak_time_threads with threads.
+# Usage: check_peak_time.sh LIBHEAPLINE PROGRAM early|late|threads
 set -eu
 lib=$1 prog=$2 mode=$3
 unset SLURM_PROCID OMPI_COMM_WORLD_RANK PMI_RANK PMIX_RANK MV2_COMM_WORLD_RANK
@@ -20,6 +21,10 @@ awk -F, -v mode="$mode" '
     } else if (mode == "late") {
       if ($9 < 0.9) { print "late peak time " $9 ", expected at least 0.9"; bad = 1 }
       if ($9 > $5) { print "peak time " $9 " after elapsed " $5; bad = 1 }
+    } else if (mode == "threads") {
+      if ($8 < 268435456) { print "heap peak " $8 " below 256 MiB"; bad = 1 }
+      if ($9 >= 0.5) { print "threads peak time " $9 ", expected below 0.5"; bad = 1 }
+      if ($5 < 1) { print "elapsed " $5 ", expected at least 1"; bad = 1 }
     } else { print "unknown mode " mode; bad = 1 }
   }
   END { if (NR != 3) { print "expected 3 lines, got " NR; bad = 1 } exit bad }

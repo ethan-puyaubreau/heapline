@@ -69,6 +69,17 @@ add_test(NAME peak_time_early
 add_test(NAME peak_time_late
          COMMAND sh ${check_peak_time} ${lib} $<TARGET_FILE:peak_time> late)
 
+# Four threads reach the peak at the start and exit holding their blocks one
+# and a half seconds later: folding the bytes they held back must not move the
+# time of the peak.
+add_executable(peak_time_threads peak_time_threads.cpp)
+target_link_libraries(peak_time_threads PRIVATE Threads::Threads)
+target_compile_options(peak_time_threads PRIVATE -fno-builtin)
+add_test(NAME peak_time_threads
+         COMMAND sh ${check_peak_time} ${lib}
+                 $<TARGET_FILE:peak_time_threads> threads)
+set_tests_properties(peak_time_threads PROPERTIES TIMEOUT 30)
+
 # Pure helpers of the library, tested without preloading it.
 add_executable(record_test record_test.cpp ${PROJECT_SOURCE_DIR}/src/record.cpp)
 target_include_directories(record_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
