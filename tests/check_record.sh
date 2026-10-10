@@ -8,7 +8,7 @@ unset SLURM_PROCID OMPI_COMM_WORLD_RANK PMI_RANK PMIX_RANK MV2_COMM_WORLD_RANK
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
 env "$@" LD_PRELOAD="$lib" HEAPLINE_OUTPUT="$dir/record.%r.%p.csv" \
-  "$prog" 2>"$dir/stderr"
+  "$prog" 2>"$dir/stderr" || { echo "program failed"; cat "$dir/stderr"; exit 1; }
 grep -q '^heapline: ' "$dir/stderr" || { echo "no summary on stderr"; exit 1; }
 set -- "$dir"/record.*.csv
 test "$#" -eq 1 && test -f "$1" || { echo "expected one record"; exit 1; }
@@ -21,7 +21,9 @@ awk -F, -v rank="$rank" '
   NR == 3 {
     if (NF != 12) { print "expected 12 values, got " NF; bad = 1 }
     if ($1 != rank) { print "rank " $1 ", expected " rank; bad = 1 }
+    if ($2 == "") { print "empty host"; bad = 1 }
     if ($6 <= 0) { print "no allocation counted"; bad = 1 }
+    if ($8 < $10) { print "heap peak " $8 " below live heap at exit " $10; bad = 1 }
     if ($9 < 0 || $9 > $5) { print "peak time " $9 " outside [0, " $5 "]"; bad = 1 }
     if ($11 < $8) { print "VmHWM " $11 " below heap peak " $8; bad = 1 }
   }

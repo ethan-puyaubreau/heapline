@@ -27,6 +27,16 @@ add_test(NAME record_fallback
            | grep -q '^# heapline 1$'"
                  sh ${lib} ${prog})
 
+# The heap peak is reached at the start or one second in, and the record must
+# say so.
+add_executable(peak_time peak_time.cpp)
+target_compile_options(peak_time PRIVATE -fno-builtin)
+set(check_peak_time ${CMAKE_CURRENT_SOURCE_DIR}/check_peak_time.sh)
+add_test(NAME peak_time_early
+         COMMAND sh ${check_peak_time} ${lib} $<TARGET_FILE:peak_time> early)
+add_test(NAME peak_time_late
+         COMMAND sh ${check_peak_time} ${lib} $<TARGET_FILE:peak_time> late)
+
 # Pure helpers of the library, tested without preloading it.
 add_executable(record_test record_test.cpp ${PROJECT_SOURCE_DIR}/src/record.cpp)
 target_include_directories(record_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
