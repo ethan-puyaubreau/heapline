@@ -16,6 +16,11 @@ heapline: 4153 allocs, 4123 frees, peak 288.3 MiB, live at exit 472.2 KiB
 
 ## Build
 
+A prebuilt archive for Linux x86_64 is on the
+[release page](https://github.com/ethan-puyaubreau/heapline/releases); the
+"Getting started" page of the documentation describes it. To build from
+source:
+
 Requirements: Linux with glibc, CMake 3.16 or newer, a C++17 compiler.
 
 ```
@@ -30,6 +35,7 @@ ctest --test-dir build --output-on-failure
 | `HEAPLINE_ENABLE_WERROR` | `OFF` | Treat compiler warnings as errors |
 | `HEAPLINE_ENABLE_EXAMPLES` | `OFF` | Build the examples, which need MPI |
 | `HEAPLINE_ENABLE_BENCH` | `OFF` | Build the overhead benchmark |
+| `HEAPLINE_STATIC_RUNTIME` | `OFF` | Link `heapline-report` with libstdc++ and libgcc statically, which needs `libstdc++-static` on RHEL |
 
 ## Output
 

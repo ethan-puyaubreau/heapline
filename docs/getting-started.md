@@ -17,6 +17,28 @@ To install them, run `cmake --install build --prefix $HOME/opt/heapline`: the
 library goes to `$HOME/opt/heapline/lib` (`lib64` on some distributions, such
 as RHEL, Rocky or SUSE) and `heapline-report` to `$HOME/opt/heapline/bin`.
 
+## Prebuilt archive
+
+The [release page](https://github.com/ethan-puyaubreau/heapline/releases)
+offers `heapline-vX.Y.Z-linux-x86_64.tar.gz` with its `.sha256` file. It is
+built on Rocky Linux 8 and needs nothing newer than glibc 2.17, so it loads on
+RHEL 8 and later and on current Ubuntu and Debian. The library depends on the
+C library only. Check it and unpack it with:
+
+```
+sha256sum -c heapline-vX.Y.Z-linux-x86_64.tar.gz.sha256
+tar xzf heapline-vX.Y.Z-linux-x86_64.tar.gz
+```
+
+The archive extracts into a directory `heapline-vX.Y.Z-linux-x86_64/`, which
+holds `lib/libheapline.so`, `bin/heapline-report` and `include/heapline.h`.
+Use that library and tool where this page says `build/libheapline.so` and
+`build/heapline-report`, for example:
+
+```
+LD_PRELOAD=$PWD/heapline-vX.Y.Z-linux-x86_64/lib/libheapline.so python3 -c "x = [bytes(10**6) for i in range(300)]"
+```
+
 ## Run a program under heapline
 
 Preload the library; the program needs no change and no rebuild:
