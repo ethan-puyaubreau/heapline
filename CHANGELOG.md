@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-10
+
+### Added
+
+- `malloc_churn` options for the size range and a resident block, a Python
+  workload, and `run_overhead.sh` for any command. The benchmark workflow
+  measures five scenarios and the performance page plots each one.
+
 ### Changed
 
+- On the `resident-4t` benchmark, four threads went from about 340% to about
+  20% of overhead, and on `churn-4t`, where the heap is small, from about 365%
+  to about 170%.
 - Each thread counts its allocations in its own counters and publishes its
   bytes in batches, so threads no longer contend for the shared counters.
   When several threads allocate, the heap peak may differ from the true peak
@@ -70,7 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI on GCC and Clang with a clang-format check, and release archives built on
   version tags.
 
-[Unreleased]: https://github.com/ethan-puyaubreau/heapline/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ethan-puyaubreau/heapline/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ethan-puyaubreau/heapline/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ethan-puyaubreau/heapline/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ethan-puyaubreau/heapline/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ethan-puyaubreau/heapline/releases/tag/v0.1.0
