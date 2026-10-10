@@ -43,7 +43,8 @@ void test_find_rank() {
   const char* both[]     = {"OMPI_COMM_WORLD_RANK", "5", "SLURM_PROCID", "3",
                             nullptr};
   const char* batch[]    = {"PMI_RANK", "7", "SLURM_PROCID", "0", nullptr};
-  const char* invalid[]  = {"SLURM_PROCID", "x", "PMI_RANK", "2", nullptr};
+  const char* invalid[]  = {"OMPI_COMM_WORLD_RANK", "3x", "SLURM_PROCID", "2",
+                            nullptr};
   const char* empty[]    = {"SLURM_PROCID", "", nullptr};
   const char* negative[] = {"SLURM_PROCID", "-1", nullptr};
   check(rank_with(none) == -1, "no variable gives -1");
