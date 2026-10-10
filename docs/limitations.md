@@ -14,12 +14,12 @@
 - The summary on stderr is lost when the program closes stderr before
   exiting, as GNU coreutils do. The record written to `HEAPLINE_OUTPUT` is not.
 - A wrapper process can overwrite the record of the program. A script run
-  without `exec`, `/usr/bin/time`, or any other parent of the program, when
-  preloaded with heapline, has the same rank and host as the program and exits
-  last. With `HEAPLINE_OUTPUT=heapline.%h.%r.csv`, its record replaces the
-  program's without a warning: a `run.sh` that launched a 288 MiB Python
-  program left the record of bash, with a peak of 158.7 KiB. Start the program
-  with `exec` and preload it alone, or add `%p` to the file name. See
+  without `exec`, `/usr/bin/time` or any other process that stays the parent of
+  the program, when preloaded with heapline, has the same rank and host as the
+  program and exits last. With `HEAPLINE_OUTPUT=heapline.%h.%r.csv`, its record
+  replaces the program's without a warning: a `run.sh` that launched a 288 MiB
+  Python program left the record of bash, with a peak of 158.7 KiB. Start the
+  program with `exec` and preload it alone, or add `%p` to the file name. See
   [Wrapper processes](mpi.md#wrapper-processes).
 - The cost is paid on every allocation. On a benchmark that does nothing but
   allocate and release from four threads, heapline makes the program about

@@ -35,7 +35,7 @@ changing the meaning of one raises the version.
 | `vmrss_at_exit_bytes` | bytes | Resident set size at exit (`VmRSS`), -1 if unknown |
 
 The peak and its time are stored separately: under concurrent allocation,
-the time may be that of a slightly earlier peak than the one reported.
+the time may belong to a slightly different peak than the one reported.
 
 ## File names
 

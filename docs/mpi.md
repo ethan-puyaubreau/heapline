@@ -60,17 +60,17 @@ MVAPICH `MV2_COMM_WORLD_RANK`, and PMIx-based launchers `PMIX_RANK`. heapline
 reads `OMPI_COMM_WORLD_RANK`, `PMIX_RANK`, `PMI_RANK`, `MV2_COMM_WORLD_RANK`
 and then `SLURM_PROCID`, in this order, and takes the first one that is set.
 `SLURM_PROCID` comes last because the ranks started by `mpirun` inside a Slurm
-allocation inherit the one of the batch step: 0 on the first node, and the
-index of the node's daemon on the other nodes. Either way it is not their
-rank.
+allocation inherit the `SLURM_PROCID` of the process that started them: 0 on
+the first node, and the index of the node's daemon on the other nodes. Either
+way it is not their rank.
 
 ## Wrapper processes
 
 `LD_PRELOAD` reaches every process started by the preloaded command. A shell
-script run without `exec`, `/usr/bin/time`, or any other parent of the program
-is preloaded too. It has the same rank and host as the program and usually
-exits last, so with `HEAPLINE_OUTPUT=heapline.%h.%r.csv` its record overwrites
-the program's, and nothing warns you.
+script run without `exec`, `/usr/bin/time` or any other process that stays the
+parent of the program is preloaded too. It has the same rank and host as the
+program and usually exits last, so with `HEAPLINE_OUTPUT=heapline.%h.%r.csv`
+its record overwrites the program's, and nothing warns you.
 
 There are two ways to avoid it:
 
@@ -79,7 +79,9 @@ There are two ways to avoid it:
   becomes `exec env LD_PRELOAD=... HEAPLINE_OUTPUT=... ./app`.
 - Or add `%p` to the file name, as in `heapline.%h.%r.%p.csv`. Every process
   then keeps its own record. `heapline-report` shows both, and its warning
-  about duplicate ranks names the two files, the wrapper's among them.
+  about duplicate ranks names the two files, the wrapper's among them. Remove
+  the wrapper's file before reading the figures: its small record lowers the
+  minimum and shifts the median and the imbalance.
 
 ## Sizing --mem
 
@@ -89,5 +91,5 @@ margin for the page cache and the system.
 
 `--mem-per-cpu` is also enforced per node: the limit is the request times the
 CPUs allocated on the node. Comparing it with the same per-node sum is
-therefore the exact check. Comparing the largest `VmHWM` of a rank with the
-request times the CPUs of a task is a stricter one.
+therefore the like-for-like check. Comparing the largest `VmHWM` of a rank with
+the request times the CPUs of a task is a stricter one.

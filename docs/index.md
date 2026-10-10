@@ -12,7 +12,7 @@ It is not a debugger and not a full heap profiler. It keeps lock-free counters
 on the allocation path and allocates nothing there. Its cost is paid per
 allocation, so a program that computes between allocations pays it less often,
 while a loop that does nothing but allocate from several threads runs several
-times slower. Only that worst case is measured, on pushes to the main branch:
+times slower. Only that extreme case is measured, on pushes to the main branch:
 see [Performance history](performance.md). When you need every allocation with
 its call stack, use heaptrack or Valgrind's massif instead (see
 [Limitations and alternatives](limitations.md)).
