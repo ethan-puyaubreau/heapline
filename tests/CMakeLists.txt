@@ -13,8 +13,10 @@ target_include_directories(alloc_threads PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(alloc_threads PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
 target_compile_options(alloc_threads PRIVATE -fno-builtin)
 add_test(NAME alloc_threads COMMAND alloc_threads)
+# The test reserves 4 GiB of address space, and skips itself when it cannot.
 set_tests_properties(alloc_threads PROPERTIES
-                     ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>)
+                     ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>
+                     SKIP_RETURN_CODE 77)
 
 # A forked child that starts a thread must not hang on the registry of the
 # parent's threads.
