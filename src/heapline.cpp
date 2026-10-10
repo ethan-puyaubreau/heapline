@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <malloc.h>
 #include <pthread.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -23,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
+#include <new>
 
 namespace {
 
@@ -50,8 +52,8 @@ VallocFn real_pvalloc               = nullptr;
 
 /**
  * @brief Allocations and releases counted outside of the per-thread
- * counters: those of exited threads, and those made by a thread that is not
- * registered, before the library constructor or after its exit handler.
+ * counters: those of exited threads, and those made by a thread that has no
+ * counters, before the library constructor or after its exit handler.
  */
 std::atomic<uint64_t> alloc_count{0};
 std::atomic<uint64_t> free_count{0};
@@ -83,29 +85,36 @@ std::atomic<int64_t> peak_time_ns{0};
 alignas(64) std::atomic<int> limit_shift{63};
 
 /**
- * @brief Counters of one thread.
+ * @brief Counters of one thread, kept in a node of a pool outside of the
+ * thread-local storage, so that they outlive the stack of the thread.
  *
  * Only the owning thread writes them, with relaxed loads and stores rather
  * than read-modify-write operations, so the allocation path touches no
  * shared cache line. pending is published to live_bytes once its magnitude
  * exceeds peak_bytes >> limit_shift. totals() reads the counters of other
- * threads under registry_mutex.
- *
- * Trivially destructible and zero-initialized, so the thread needs no TLS
- * constructor or destructor, which could allocate. The initial-exec model
- * avoids a call to __tls_get_addr on every access; it requires the library
- * to be loaded at startup, as LD_PRELOAD does.
+ * threads under registry_mutex, which also guards next. Each node has a
+ * cache line of its own, so that the nodes of two threads never share one.
  */
-struct ThreadCounters {
+struct alignas(64) ThreadCounters {
   std::atomic<int64_t> pending;  ///< Bytes not yet added to live_bytes.
   std::atomic<uint64_t> allocs;  ///< Allocations made by this thread.
   std::atomic<uint64_t> frees;   ///< Releases made by this thread.
-  ThreadCounters* next;          ///< Next registered thread.
-  bool registered;               ///< Registration has been done.
-  bool own;                      ///< Counts here rather than in the globals.
+  ThreadCounters* next;          ///< Next node of the registry or free list.
 };
 
-__attribute__((tls_model("initial-exec"))) thread_local ThreadCounters local;
+static_assert(sizeof(ThreadCounters) == 64, "one node per cache line");
+
+/**
+ * @brief State of the calling thread. Trivial and zero-initialized, so that
+ * the thread needs no TLS constructor or destructor, which could allocate. The
+ * initial-exec model avoids a call to __tls_get_addr on every access; it
+ * requires the library to be loaded at startup, as LD_PRELOAD does.
+ *
+ * local is the node of the thread, or null when the thread counts in the
+ * globals. registered tells that the thread has tried to get a node.
+ */
+__attribute__((tls_model("initial-exec"))) thread_local ThreadCounters* local;
+__attribute__((tls_model("initial-exec"))) thread_local bool registered;
 
 /**
  * @brief Set while the calling thread holds registry_mutex for a fork, from
@@ -117,12 +126,23 @@ __attribute__((tls_model("initial-exec"))) thread_local ThreadCounters local;
 __attribute__((tls_model("initial-exec"))) thread_local bool holds_registry;
 
 /**
- * @brief Registered threads and their number. registry_mutex also
- * serializes the exit of a thread with the computation of totals.
+ * @brief Nodes of the threads that have counters, and their number.
+ * registry_mutex also serializes the exit of a thread with the computation of
+ * totals, and guards the node pool below.
  */
 pthread_mutex_t registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 ThreadCounters* registry       = nullptr;
 int64_t registered_threads     = 0;
+
+/**
+ * @brief Node pool: nodes released by exited threads, and the rest of the
+ * current chunk. Chunks come from mmap, not from malloc, and are never
+ * unmapped.
+ */
+constexpr size_t kChunkBytes = 64 << 10;
+ThreadCounters* free_nodes   = nullptr;
+char* chunk_next             = nullptr;
+char* chunk_end              = nullptr;
 
 /**
  * @brief Key whose destructor folds the counters of an exiting thread into
@@ -231,67 +251,84 @@ void publish(int64_t delta) {
  * @brief Publish the bytes held back by the calling thread.
  */
 void publish_own() {
-  if (!local.own) return;
-  int64_t pending = local.pending.load(std::memory_order_relaxed);
+  ThreadCounters* counters = local;
+  if (!counters) return;
+  int64_t pending = counters->pending.load(std::memory_order_relaxed);
   if (pending == 0) return;
-  local.pending.store(0, std::memory_order_relaxed);
+  counters->pending.store(0, std::memory_order_relaxed);
   publish(pending);
+}
+
+/**
+ * @brief Take a zeroed node from the pool, or null when no memory is left for
+ * a new chunk. Called with registry_mutex held.
+ */
+ThreadCounters* take_node() {
+  ThreadCounters* node = free_nodes;
+  if (node) {
+    free_nodes = node->next;
+  } else {
+    if (chunk_next == chunk_end) {
+      void* chunk = mmap(nullptr, kChunkBytes, PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+      if (chunk == MAP_FAILED) return nullptr;
+      chunk_next = static_cast<char*>(chunk);
+      chunk_end  = chunk_next + kChunkBytes;
+    }
+    node = new (chunk_next) ThreadCounters;
+    chunk_next += sizeof(ThreadCounters);
+  }
+  node->pending.store(0, std::memory_order_relaxed);
+  node->allocs.store(0, std::memory_order_relaxed);
+  node->frees.store(0, std::memory_order_relaxed);
+  node->next = nullptr;
+  return node;
 }
 
 void retire(void* arg);
 
 /**
- * @brief Register the calling thread on its first counted operation.
+ * @brief Give the calling thread a node on its first counted operation.
  *
  * registered is set first, so that an allocation made while registering,
- * by pthread_setspecific for instance, does not register again.
+ * by pthread_setspecific for instance, does not register again. If no node
+ * can be had, the thread keeps counting in the globals.
  *
- * A thread whose first counted operation is made by a key destructor in the
- * last round sets exit_key too late for retire() to run: it stays in the
- * registry after its exit. Destructors of C++ thread_local objects run before
- * the keys, so only another key can cause this, in a thread that made no
- * counted operation earlier in its life. glibc may then give the stack of
- * that thread, which holds its counters, to a new thread, and so may a child
- * created without the fork handlers, which keeps the registry of its parent.
- * The new thread finds its counters already in the registry. Linking them a
- * second time would make a cycle, so it only takes them over. They were
- * zeroed with the stack: the counts of the dead thread, and the entries of
- * the threads registered before it, are missing from the totals.
+ * A thread that registers after its last round of key destructors sets
+ * exit_key too late for retire() to run: it keeps its node after its exit.
+ * Destructors of C++ thread_local objects run before the keys, so only another
+ * key can cause this, in a thread that made no counted operation earlier. The
+ * counts of that thread stay exact, at the cost of one node. A new thread that
+ * gets the same stack starts with zeroed thread-local storage and takes a
+ * node of its own.
  */
 void register_thread() {
   if (holds_registry || !registry_ready.load(std::memory_order_acquire)) return;
-  local.registered = true;
+  registered = true;
   pthread_mutex_lock(&registry_mutex);
-  bool listed = false;
-  for (ThreadCounters* counters = registry; counters;
-       counters                 = counters->next) {
-    if (counters == &local) {
-      listed = true;
-      break;
-    }
-  }
-  if (!listed) {
-    local.next = registry;
-    registry   = &local;
+  ThreadCounters* node = take_node();
+  if (node) {
+    node->next = registry;
+    registry   = node;
     limit_shift.store(shift_for(++registered_threads),
                       std::memory_order_relaxed);
+    local = node;
   }
-  local.own = true;
   pthread_mutex_unlock(&registry_mutex);
-  // Without the key, the thread would stay in the registry after its exit.
-  if (pthread_setspecific(exit_key, &local) != 0) retire(&local);
+  // Without the key, the node would stay in the registry after the exit.
+  if (node && pthread_setspecific(exit_key, node) != 0) retire(node);
 }
 
 /**
  * @brief Destructor of exit_key: fold the counters of the exiting thread into
- * the globals and unregister it. Later operations of the thread, made by
- * other TLS destructors, are counted in the globals directly.
+ * the globals and give its node back to the pool. Later operations of the
+ * thread, made by other TLS destructors, are counted in the globals directly.
  */
 void retire(void* arg) {
   auto* counters = static_cast<ThreadCounters*>(arg);
+  local          = nullptr;
   pthread_mutex_lock(&registry_mutex);
   publish(counters->pending.load(std::memory_order_relaxed));
-  counters->pending.store(0, std::memory_order_relaxed);
   alloc_count.fetch_add(counters->allocs.load(std::memory_order_relaxed),
                         std::memory_order_relaxed);
   free_count.fetch_add(counters->frees.load(std::memory_order_relaxed),
@@ -302,8 +339,9 @@ void retire(void* arg) {
       break;
     }
   }
+  counters->next = free_nodes;
+  free_nodes     = counters;
   limit_shift.store(shift_for(--registered_threads), std::memory_order_relaxed);
-  counters->own = false;
   pthread_mutex_unlock(&registry_mutex);
 }
 
@@ -315,24 +353,28 @@ void retire(void* arg) {
  * pointers is needed and nothing is allocated on this path.
  */
 void account(int64_t delta, bool is_alloc) {
-  if (!local.registered) register_thread();
-  if (!local.own) {
-    (is_alloc ? alloc_count : free_count)
-        .fetch_add(1, std::memory_order_relaxed);
-    publish(delta);
-    return;
+  ThreadCounters* counters = local;
+  if (__builtin_expect(!counters, 0)) {
+    if (!registered) register_thread();
+    counters = local;
+    if (!counters) {
+      (is_alloc ? alloc_count : free_count)
+          .fetch_add(1, std::memory_order_relaxed);
+      publish(delta);
+      return;
+    }
   }
-  std::atomic<uint64_t>& count = is_alloc ? local.allocs : local.frees;
+  std::atomic<uint64_t>& count = is_alloc ? counters->allocs : counters->frees;
   count.store(count.load(std::memory_order_relaxed) + 1,
               std::memory_order_relaxed);
-  int64_t pending = local.pending.load(std::memory_order_relaxed) + delta;
+  int64_t pending = counters->pending.load(std::memory_order_relaxed) + delta;
   int64_t limit   = peak_bytes.load(std::memory_order_relaxed) >>
                   limit_shift.load(std::memory_order_relaxed);
   if (pending > limit || pending < -limit) {
-    local.pending.store(0, std::memory_order_relaxed);
+    counters->pending.store(0, std::memory_order_relaxed);
     publish(pending);
   } else {
-    local.pending.store(pending, std::memory_order_relaxed);
+    counters->pending.store(pending, std::memory_order_relaxed);
   }
 }
 
@@ -391,23 +433,29 @@ void unlock_registry() {
 
 /**
  * @brief Fork handler of the child, where only the forking thread exists.
- * Fold the counters of the parent's other threads into the globals and drop
- * them from the registry: glibc reuses their stacks, which hold their
- * counters, for the next threads of the child.
+ * Fold the counters of the parent's other threads into the globals and give
+ * their nodes back to the pool; only the node of the forking thread, if it
+ * has one, stays in the registry.
  */
 void reset_registry_in_child() {
-  for (ThreadCounters* counters = registry; counters;
-       counters                 = counters->next) {
-    if (counters == &local) continue;
-    publish(counters->pending.load(std::memory_order_relaxed));
-    alloc_count.fetch_add(counters->allocs.load(std::memory_order_relaxed),
-                          std::memory_order_relaxed);
-    free_count.fetch_add(counters->frees.load(std::memory_order_relaxed),
-                         std::memory_order_relaxed);
+  ThreadCounters* mine = local;
+  ThreadCounters* node = registry;
+  while (node) {
+    ThreadCounters* next = node->next;
+    if (node != mine) {
+      publish(node->pending.load(std::memory_order_relaxed));
+      alloc_count.fetch_add(node->allocs.load(std::memory_order_relaxed),
+                            std::memory_order_relaxed);
+      free_count.fetch_add(node->frees.load(std::memory_order_relaxed),
+                           std::memory_order_relaxed);
+      node->next = free_nodes;
+      free_nodes = node;
+    }
+    node = next;
   }
-  registry           = local.own ? &local : nullptr;
-  local.next         = nullptr;
-  registered_threads = local.own ? 1 : 0;
+  registry = mine;
+  if (mine) mine->next = nullptr;
+  registered_threads = mine ? 1 : 0;
   limit_shift.store(shift_for(registered_threads), std::memory_order_relaxed);
   holds_registry = false;
   pthread_mutex_unlock(&registry_mutex);
