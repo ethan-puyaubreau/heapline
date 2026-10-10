@@ -49,13 +49,18 @@ void* child_worker(void*) {
 
 /**
  * @brief Body of the child, where only the forking thread exists. A hang
- * ends with SIGALRM.
+ * ends with SIGALRM. @p parent holds the counters of the parent just before
+ * the fork, which the child inherits.
  */
-int run_child(GetStatsFn get_stats) {
+int run_child(GetStatsFn get_stats, const heapline_stats& parent) {
   alarm(kAlarmSeconds);
   heapline_stats before{};
   heapline_stats after{};
   get_stats(&before);
+  if (before.allocs < parent.allocs || before.frees < parent.frees) {
+    std::fprintf(stderr, "FAIL: child keeps the counts of its parent\n");
+    return 1;
+  }
   pthread_t thread;
   if (pthread_create(&thread, nullptr, child_worker, nullptr) != 0) {
     std::fprintf(stderr, "child: pthread_create failed\n");
@@ -92,13 +97,15 @@ int main() {
   }
   pthread_barrier_wait(&ready);
 
+  heapline_stats at_fork{};
+  get_stats(&at_fork);
   const pid_t pid = fork();
   if (pid < 0) {
     std::perror("fork");
     return 1;
   }
   // exit rather than _exit, so that the library destructor runs as well.
-  if (pid == 0) std::exit(run_child(get_stats));
+  if (pid == 0) std::exit(run_child(get_stats, at_fork));
 
   int status         = 0;
   const pid_t waited = waitpid(pid, &status, 0);
