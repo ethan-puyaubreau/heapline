@@ -16,19 +16,27 @@ NUMBERS = ("overhead", "allocs_per_s")
 STRINGS = ("commit", "date", "cpu")
 
 
-def valid(point):
-    """Tell whether a parsed line holds every field the page needs."""
+def clean(point):
+    """Return the parsed line with float numbers, or None when it lacks a
+    field the page needs or holds a number the page cannot draw."""
     if not isinstance(point, dict):
-        return False
+        return None
+    if not all(isinstance(point.get(key), str) for key in STRINGS):
+        return None
+    out = dict(point)
     for key in NUMBERS:
         value = point.get(key)
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-        ):
-            return False
-    return all(isinstance(point.get(key), str) for key in STRINGS)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        try:
+            out[key] = float(value)
+        except (OverflowError, ValueError, TypeError):
+            return None
+    if not (
+        math.isfinite(out["allocs_per_s"]) and math.isfinite(100 * out["overhead"])
+    ):
+        return None
+    return out
 
 
 def load(path):
@@ -47,10 +55,11 @@ def load(path):
         except (ValueError, RecursionError):
             skipped += 1
             continue
-        if valid(point):
-            points.append(point)
-        else:
+        point = clean(point)
+        if point is None:
             skipped += 1
+        else:
+            points.append(point)
     return points, skipped
 
 
@@ -110,6 +119,12 @@ def svg(points):
     return "\n".join(parts) + "\n"
 
 
+def cell(text):
+    """Make a string safe for a Markdown table cell."""
+    text = text.replace("|", "/").replace("`", "")
+    return text.replace("\r", "").replace("\n", "")
+
+
 def table(points):
     rows = [
         "| Commit | Date | Overhead | Allocations/s with heapline | Runner CPU |",
@@ -117,8 +132,9 @@ def table(points):
     ]
     for p in reversed(points[-20:]):
         rows.append(
-            f"| `{p['commit']}` | {p['date'][:10]} | {100 * p['overhead']:.1f}% "
-            f"| {p['allocs_per_s']:.3g} | {p['cpu']} |"
+            f"| `{cell(p['commit'])}` | {cell(p['date'])[:10]} "
+            f"| {100 * p['overhead']:.1f}% "
+            f"| {p['allocs_per_s']:.3g} | {cell(p['cpu'])} |"
         )
     return "\n".join(rows) + "\n"
 
