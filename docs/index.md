@@ -22,6 +22,7 @@ instead (see [Limitations and alternatives](limitations.md)).
 
 getting-started
 tutorial
+tutorial-mpi
 mpi
 report
 format

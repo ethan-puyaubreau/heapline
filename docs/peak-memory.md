@@ -16,15 +16,17 @@ Why they differ:
 
 - **Heap peak above `VmHWM`**: memory that was allocated but never written is
   not resident. A large array allocated and only partly used counts fully in
-  the heap and partly in `VmHWM`.
+  the heap and partly in `VmHWM`. [Step 4 of the
+  tutorial](tutorial.md#4-understand-the-numbers) shows a program whose heap
+  peak is 26 times its `VmHWM`.
 - **`VmHWM` above heap peak**: everything that is not counted as heap in
   use. Code and libraries take resident pages, and so do thread stacks. MPI
   libraries map shared memory and other regions with `mmap`, which heapline
   does not see; the buffers they obtain with `malloc` are counted. The
   allocator also keeps freed memory and fragments it (arenas per thread,
   pages it retains instead of returning them), so resident memory can stay
-  above the heap in use. In the [tutorial](tutorial.md), `VmHWM` exceeds the
-  heap peak by about 11 MiB on every rank.
+  above the heap in use. In the [MPI tutorial](tutorial-mpi.md), `VmHWM`
+  exceeds the heap peak by about 11 MiB on every rank.
 - **`MaxRSS` below `VmHWM`**: Slurm samples. A peak shorter than the sampling
   period can fall between two samples.
 - **cgroup peak usually the highest**: the page cache of the files the job

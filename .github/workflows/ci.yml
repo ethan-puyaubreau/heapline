@@ -79,8 +79,24 @@ jobs:
       - name: Check the peaks
         run: sh tests/check_example.sh merged.csv 4
 
-      - name: Run the first tutorial steps
+      - name: Run the plain tutorial
+        shell: bash
         run: |
-          LD_PRELOAD=$PWD/build/libheapline.so HEAPLINE_OUTPUT=run.csv \
-            python3 -c "x = [bytes(10**6) for i in range(300)]"
+          set -o pipefail
+          LD_PRELOAD=$PWD/build/libheapline.so python3 -c "x = [bytes(10**6) for i in range(300)]"
+          LD_PRELOAD=$PWD/build/libheapline.so HEAPLINE_OUTPUT=run.csv python3 -c "x = [bytes(10**6) for i in range(300)]"
+          cat run.csv
           build/heapline-report run.csv
+          LD_PRELOAD=$PWD/build/libheapline.so HEAPLINE_OUTPUT=touched.csv python3 -c "x = [b'x' * 10**6 for i in range(300)]"
+          build/heapline-report touched.csv
+          # Step 4 of the tutorial: untouched zeroed blocks are not resident.
+          # This depends on CPython and the kernel; if it flaps, relax the
+          # factors or drop these two lines, the tutorial text stays true.
+          awk -F, 'NR == 3 && $11 < $8 / 2 { ok = 1 } END { exit !ok }' run.csv
+          awk -F, 'NR == 3 && $11 > 0.9 * $8 { ok = 1 } END { exit !ok }' touched.csv
+          LD_PRELOAD=$PWD/build/libheapline.so HEAPLINE_OUTPUT=early.csv python3 -c "import time; x = bytes(300 * 10**6); del x; time.sleep(2)"
+          LD_PRELOAD=$PWD/build/libheapline.so HEAPLINE_OUTPUT=late.csv python3 -c "import time; time.sleep(2); x = bytes(300 * 10**6)"
+          build/heapline-report early.csv | grep '^  max' | grep 'at 0\.[0-4] s'
+          build/heapline-report late.csv | grep '^  max' | grep 'at [12]\.[0-9] s'
+          LD_PRELOAD=$PWD/build/libheapline.so HEAPLINE_OUTPUT=wrapped.csv bash -c "python3 -c \"x = [bytes(10**6) for i in range(300)]\"; echo done"
+          awk -F, 'NR == 3 && $8 < 1048576 { found = 1 } END { exit !found }' wrapped.csv

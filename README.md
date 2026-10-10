@@ -6,7 +6,8 @@ heapline is a small shared library loaded with `LD_PRELOAD`. It intercepts
 the glibc allocation functions, counts allocations and releases, and tracks
 the bytes in use and their peak. A summary is printed to stderr at exit.
 
-Documentation, tutorial and performance history:
+Documentation, tutorials (one program, and an MPI job) and performance
+history:
 <https://ethan-puyaubreau.github.io/heapline/>
 
 ```

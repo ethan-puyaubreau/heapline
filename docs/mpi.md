@@ -3,7 +3,7 @@
 ## With srun
 
 Install heapline once, from the source tree where you built it in the
-[tutorial](tutorial.md):
+[MPI tutorial](tutorial-mpi.md):
 
 ```
 cmake --install build --prefix $HOME/opt/heapline

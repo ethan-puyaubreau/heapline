@@ -67,4 +67,5 @@ build/heapline-report run.csv
 
 The record adds the time of the peak and the peak resident set size of the
 process; its columns are described in [Output format](format.md). For an MPI
-job, see the [tutorial](tutorial.md).
+job, see the [MPI tutorial](tutorial-mpi.md). The [plain
+tutorial](tutorial.md) walks through one program step by step.

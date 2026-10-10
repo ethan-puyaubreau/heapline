@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The tutorial is split: an introductory tutorial for one program, without
+  MPI, and a separate tutorial for MPI jobs.
 - The release archive is built on Rocky Linux 8 and checked in CI:
   `libheapline.so` needs only the C library and nothing newer than glibc 2.17,
   so it loads on RHEL, Rocky and Alma 8 and later. Earlier archives, built on
