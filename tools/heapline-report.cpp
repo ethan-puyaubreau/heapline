@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -53,6 +54,7 @@ struct Process {
   long long vmhwm_bytes             = -1;
   long long vmrss_at_exit_bytes     = -1;
   std::string values;  ///< Raw CSV values, kept for --csv.
+  std::string file;    ///< Path of the record, kept for warnings.
 };
 
 /**
@@ -219,28 +221,69 @@ std::string format_bytes(long long bytes) {
 }
 
 /**
- * @brief Ranks between 0 and the highest rank seen that have no record.
+ * @brief Number of values join() prints before the ellipsis.
+ */
+constexpr size_t kListed = 20;
+
+/**
+ * @brief The first ranks between 0 and the highest rank seen that have no
+ * record: one more than kListed at most, which is all join() needs.
  */
 std::vector<long> missing_ranks(const std::vector<Process>& processes) {
   std::set<long> seen;
   for (const auto& p : processes)
     if (p.rank >= 0) seen.insert(p.rank);
   std::vector<long> missing;
-  if (seen.empty()) return missing;
-  for (long r = 0; r < *seen.rbegin(); ++r)
-    if (!seen.count(r)) missing.push_back(r);
+  long previous = -1;
+  for (const long rank : seen) {
+    for (long r = previous + 1; r < rank && missing.size() <= kListed; ++r)
+      missing.push_back(r);
+    if (missing.size() > kListed) break;
+    previous = rank;
+  }
   return missing;
 }
 
 /**
- * @brief Comma-separated list of the first 20 values, then an ellipsis.
+ * @brief Comma-separated list of the first kListed values, then an ellipsis.
  */
-std::string join(const std::vector<long>& values) {
-  std::string out;
-  for (size_t i = 0; i < values.size() && i < 20; ++i)
-    out += (i ? ", " : "") + std::to_string(values[i]);
-  if (values.size() > 20) out += ", ...";
-  return out;
+template <typename T>
+std::string join(const std::vector<T>& values) {
+  std::ostringstream out;
+  for (size_t i = 0; i < values.size() && i < kListed; ++i)
+    out << (i ? ", " : "") << values[i];
+  if (values.size() > kListed) out << ", ...";
+  return out.str();
+}
+
+/**
+ * @brief Warn about records that share a rank, as when a stale file of an
+ * earlier run was left in the directory.
+ */
+void warn_duplicate_ranks(const std::vector<Process>& processes) {
+  std::map<long, const Process*> first;
+  for (const auto& p : processes) {
+    if (p.rank < 0) continue;
+    const auto [it, inserted] = first.emplace(p.rank, &p);
+    if (!inserted)
+      warn("duplicate rank " + std::to_string(p.rank) + " in " +
+           it->second->file + " and " + p.file);
+  }
+}
+
+/**
+ * @brief Warn when the records do not all carry the same job identifier.
+ */
+void warn_several_jobs(const std::vector<Process>& processes) {
+  std::vector<std::string> jobs;
+  for (const auto& p : processes) {
+    if (p.job.empty() ||
+        std::find(jobs.begin(), jobs.end(), p.job) != jobs.end())
+      continue;
+    jobs.push_back(p.job);
+    if (jobs.size() > kListed) break;
+  }
+  if (jobs.size() > 1) warn("records from several jobs: " + join(jobs));
 }
 
 /**
@@ -356,60 +399,68 @@ void usage(std::FILE* out) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  Options options;
-  for (int i = 1; i < argc; ++i) {
-    const std::string arg = argv[i];
-    if (arg == "--version") {
-      std::printf("heapline-report %s\n", HEAPLINE_VERSION);
-      return 0;
-    }
-    if (arg == "--help" || arg == "-h") {
-      usage(stdout);
-      return 0;
-    }
-    if (arg == "--all") {
-      options.all = true;
-    } else if (arg == "--csv" && i + 1 < argc) {
-      options.csv = argv[++i];
-    } else if (arg == "--top" && i + 1 < argc) {
-      long long top = 0;
-      if (!parse(argv[++i], top) || top <= 0) {
-        warn("--top expects a positive number");
-        return 1;
+  try {
+    Options options;
+    for (int i = 1; i < argc; ++i) {
+      const std::string arg = argv[i];
+      if (arg == "--version") {
+        std::printf("heapline-report %s\n", HEAPLINE_VERSION);
+        return 0;
       }
-      options.top = static_cast<size_t>(top);
-    } else if (!arg.empty() && arg[0] == '-') {
+      if (arg == "--help" || arg == "-h") {
+        usage(stdout);
+        return 0;
+      }
+      if (arg == "--all") {
+        options.all = true;
+      } else if (arg == "--csv" && i + 1 < argc) {
+        options.csv = argv[++i];
+      } else if (arg == "--top" && i + 1 < argc) {
+        long long top = 0;
+        if (!parse(argv[++i], top) || top <= 0) {
+          warn("--top expects a positive number");
+          return 1;
+        }
+        options.top = static_cast<size_t>(top);
+      } else if (!arg.empty() && arg[0] == '-') {
+        usage(stderr);
+        return 1;
+      } else {
+        options.inputs.push_back(arg);
+      }
+    }
+    if (options.inputs.empty()) {
       usage(stderr);
       return 1;
-    } else {
-      options.inputs.push_back(arg);
     }
-  }
-  if (options.inputs.empty()) {
-    usage(stderr);
-    return 1;
-  }
 
-  std::vector<Process> processes;
-  for (const auto& file : collect(options.inputs)) {
-    Process process;
-    std::string error = read_record(file, process);
-    if (error.empty())
-      processes.push_back(std::move(process));
-    else
-      warn(file.string() + ": " + error);
-  }
-  if (processes.empty()) {
-    warn("no valid record");
+    std::vector<Process> processes;
+    for (const auto& file : collect(options.inputs)) {
+      Process process;
+      process.file      = file.string();
+      std::string error = read_record(file, process);
+      if (error.empty())
+        processes.push_back(std::move(process));
+      else
+        warn(file.string() + ": " + error);
+    }
+    if (processes.empty()) {
+      warn("no valid record");
+      return 1;
+    }
+    std::vector<long> missing = missing_ranks(processes);
+    if (!missing.empty())
+      warn("missing ranks: " + join(missing) + " (killed or never started?)");
+    warn_duplicate_ranks(processes);
+    warn_several_jobs(processes);
+    print_report(processes, options);
+    if (!options.csv.empty() && !write_csv(options.csv, processes)) {
+      warn("cannot write " + options.csv);
+      return 1;
+    }
+    return 0;
+  } catch (const std::exception& e) {
+    warn(std::string("error: ") + e.what());
     return 1;
   }
-  std::vector<long> missing = missing_ranks(processes);
-  if (!missing.empty())
-    warn("missing ranks: " + join(missing) + " (killed or never started?)");
-  print_report(processes, options);
-  if (!options.csv.empty() && !write_csv(options.csv, processes)) {
-    warn("cannot write " + options.csv);
-    return 1;
-  }
-  return 0;
 }

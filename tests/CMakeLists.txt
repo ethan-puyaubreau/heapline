@@ -79,3 +79,28 @@ add_test(NAME report_version
 add_test(NAME report_usage
          COMMAND sh -c "! \"$1\" 2>usage.err && grep -q '^usage:' usage.err"
                  sh ${report})
+
+# A clean job warns about nothing.
+add_test(NAME report_clean_job
+         COMMAND sh -c "\"$1\" \"$2/job\" >/dev/null 2>clean.err \
+           && test ! -s clean.err"
+                 sh ${report} ${data})
+# Two records with the same rank hint at a stale file left in the directory.
+add_test(NAME report_duplicate_rank
+         COMMAND sh -c "\"$1\" \"$2/duplicate-rank\" >/dev/null \
+           2>duplicate_rank.err && grep -q \
+           'duplicate rank 1 in .*heapline.a.csv and .*heapline.b.csv' \
+           duplicate_rank.err"
+                 sh ${report} ${data})
+add_test(NAME report_several_jobs
+         COMMAND sh -c "\"$1\" \"$2/several-jobs\" >/dev/null \
+           2>several_jobs.err && grep -q \
+           'records from several jobs: 4242, 5151' several_jobs.err"
+                 sh ${report} ${data})
+# A huge rank must neither take long nor fill the memory.
+add_test(NAME report_huge_rank
+         COMMAND sh -c "\"$1\" \"$2/huge-rank\" >/dev/null 2>huge_rank.err \
+           && grep -q 'missing ranks: 1, 2, 3, .*19, 20, [.][.][.] ' \
+           huge_rank.err"
+                 sh ${report} ${data})
+set_tests_properties(report_huge_rank PROPERTIES TIMEOUT 10)
