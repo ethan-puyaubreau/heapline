@@ -35,6 +35,7 @@ jobs:
           sh bench/run_overhead.sh build/bench/malloc_churn build/libheapline.so 10 | tee point.json
 
       - name: Append to bench-data
+        if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
           test -s point.json
