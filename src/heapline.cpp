@@ -298,9 +298,11 @@ void retire(void* arg);
  * heapline holds the mutex before glibc takes its own locks (for the name
  * services, the list of streams, malloc), so a thread whose first counted
  * operation is made under one of them would wait for the mutex while the
- * forking thread waits for that lock. A fork made from a signal handler that
- * interrupts a registration is the same case. The forking thread, and the
- * child before it resets the registry, find the mutex busy too.
+ * forking thread waits for that lock. An allocation made by a signal handler
+ * while its thread holds the mutex finds it busy instead of deadlocking; a
+ * fork from such a handler still deadlocks, as it would in retire() or
+ * totals(). The forking thread, and the child before it resets the registry,
+ * find the mutex busy too.
  *
  * registered is set once the mutex is held, so that an allocation made while
  * registering, by pthread_setspecific for instance, does not register again.

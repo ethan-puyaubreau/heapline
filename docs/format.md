@@ -46,8 +46,8 @@ may be missing. `allocs`, `frees` and `live_heap_at_exit_bytes` count every
 thread exactly, threads still running at exit included, except for operations
 in progress at that instant. The peak and its time are stored separately:
 under concurrent allocation, the time may belong to a slightly different peak
-than the one reported, and with several threads it may be the time of a moment
-when the heap was already within that bound of the peak.
+than the one reported, and with several threads it may be the time of an
+earlier moment, before bytes held back by threads were published.
 
 ## File names
 

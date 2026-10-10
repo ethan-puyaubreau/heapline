@@ -13,9 +13,10 @@
 - `heapline_get_stats` takes a mutex, so it cannot be called from a signal
   handler or from a fork handler.
 - A child process created with `_Fork` or a raw `clone`, which run no fork
-  handlers, can hang at exit if another thread was registering or exiting at
-  the moment it was created. `fork`, `vfork` and `posix_spawn` are not
-  affected.
+  handlers, can hang at exit, or in `heapline_get_stats`, if another thread
+  held the internal lock of heapline at the moment it was created: while
+  starting, exiting or reading the totals. `fork`, `vfork` and `posix_spawn`
+  are not affected.
 - Memory obtained with `mmap` directly, or allocated on a GPU, is not heap
   and is not counted.
 - A process killed by a signal writes no record. `heapline-report` lists it as
