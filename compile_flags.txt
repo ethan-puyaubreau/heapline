@@ -1,0 +1,9 @@
+--target=x86_64-pc-linux-gnu
+-xc++
+-std=c++17
+-Iinclude
+-Isrc
+-DHEAPLINE_VERSION="dev"
+-Wall
+-Wextra
+-Wpedantic
