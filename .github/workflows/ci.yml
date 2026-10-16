@@ -38,6 +38,37 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
 
+  ubsan:
+    name: Undefined behavior sanitizer
+    runs-on: ubuntu-24.04
+    env:
+      SANITIZE: -fsanitize=undefined -fno-sanitize-recover=all
+      UBSAN_OPTIONS: print_stacktrace=1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate a comma locale
+        run: sudo locale-gen fr_FR.UTF-8
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_COMPILER=g++
+          -DHEAPLINE_ENABLE_WERROR=ON
+          "-DCMAKE_CXX_FLAGS=$SANITIZE"
+          "-DCMAKE_SHARED_LINKER_FLAGS=$SANITIZE"
+          "-DCMAKE_EXE_LINKER_FLAGS=$SANITIZE"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # library_dependencies checks that the library needs only the C library,
+      # which libubsan breaks.
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure -E library_dependencies
+
   format:
     name: Formatting
     runs-on: ubuntu-24.04
