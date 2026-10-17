@@ -76,16 +76,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # The TSan runtime of GCC 13 does not handle the mmap randomization of
-      # recent kernels and aborts with "unexpected memory mapping".
-      - name: Reduce the mmap randomization
-        run: sudo sysctl vm.mmap_rnd_bits=28
-
+      # Clang rather than GCC. With the TSan runtime of GCC 13 and 14, about
+      # one forked child in a hundred hangs: the fork does not take the locks
+      # of the TSan allocator, which a worker may hold. Clang links its runtime
+      # into the test, so the blocks come from the allocator of glibc, which
+      # forks cleanly. Clang 18 also copes with the mmap randomization of
+      # recent kernels, which GCC 13 and 14 do not.
       - name: Configure
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DCMAKE_CXX_COMPILER=g++
+          -DCMAKE_CXX_COMPILER=clang++-18
           -DHEAPLINE_ENABLE_WERROR=ON
           -DHEAPLINE_ENABLE_TSAN=ON
 
