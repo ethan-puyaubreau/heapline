@@ -69,6 +69,32 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build --output-on-failure -E library_dependencies
 
+  tsan:
+    name: Thread sanitizer
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The TSan runtime of GCC 13 does not handle the mmap randomization of
+      # recent kernels and aborts with "unexpected memory mapping".
+      - name: Reduce the mmap randomization
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_COMPILER=g++
+          -DHEAPLINE_ENABLE_WERROR=ON
+          -DHEAPLINE_ENABLE_TSAN=ON
+
+      - name: Build
+        run: cmake --build build --parallel --target tsan_stress
+
+      - name: Run the stress test
+        run: ctest --test-dir build --output-on-failure -R tsan_stress
+
   format:
     name: Formatting
     runs-on: ubuntu-24.04
