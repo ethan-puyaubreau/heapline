@@ -1,0 +1,125 @@
+.\" SPDX-License-Identifier: Apache-2.0
+.TH HEAPLINE-REPORT 1 @HEAPLINE_MAN_DATE@ "heapline @PROJECT_VERSION@" "User Commands"
+.SH NAME
+heapline-report \- summarize the heap usage records of heapline
+.SH SYNOPSIS
+.B heapline-report
+.RB [ \-\-top
+.IR N " | " \fB\-\-all\fR ]
+.RB [ \-\-csv
+.IR FILE ]
+.IR RECORD_OR_DIR ...
+.br
+.B heapline-report
+.B \-\-version
+.SH DESCRIPTION
+.B heapline-report
+reads the records that the heapline library writes, given as files or found
+as
+.I *.csv
+files in directories, and prints a summary of the job: the highest peak heap,
+its rank and when it was reached, the median, minimum and imbalance of the
+peaks; per node, the sum of the peak resident set sizes
+.RB ( VmHWM )
+of its ranks, the figure to compare with the
+.B \-\-mem
+request of a Slurm job; and the ranks with the highest peaks (see
+.BR \-\-top ).
+.PP
+Files that cannot be read, that are not version 1 records, or that hold
+missing or bad values are reported on standard error and skipped.
+Gaps in the rank numbers are reported as missing ranks, two files that hold
+the same rank are named, and the jobs are listed when the records come from
+several Slurm jobs.
+.SH OPTIONS
+.TP
+.BI \-\-top " N"
+List the
+.I N
+ranks with the highest heap peak (10 by default).
+.TP
+.B \-\-all
+List every rank.
+.TP
+.BI \-\-csv " FILE"
+Also write all records, sorted by rank, to
+.IR FILE .
+Write it outside the records directory: every
+.I .csv
+file of that directory is read as a record.
+.TP
+.B \-\-version
+Print the version and exit.
+.TP
+.BR \-h ", " \-\-help
+Print a short usage and exit.
+.SH EXIT STATUS
+.TP
+.B 0
+The summary was printed.
+.TP
+.B 1
+No record or directory is given, no record is valid, an option is wrong, or
+.I FILE
+cannot be written.
+.SH RECORDING
+heapline is a shared library loaded with
+.BR LD_PRELOAD .
+The program needs no change and no rebuild.
+At exit, a one-line summary goes to standard error.
+Set
+.B HEAPLINE_OUTPUT
+to also write a record of the process.
+In its value,
+.B %p
+is replaced with the process id,
+.B %r
+with the MPI rank and
+.B %h
+with the host name.
+The directory must exist: when the file cannot be opened, the record goes to
+standard error.
+.PP
+The rank is read from
+.BR OMPI_COMM_WORLD_RANK ,
+.BR PMIX_RANK ,
+.BR PMI_RANK ,
+.B MV2_COMM_WORLD_RANK
+or
+.BR SLURM_PROCID ,
+in this order, and is \-1 outside MPI.
+.SH EXAMPLES
+One program, with the library installed in the default search path:
+.PP
+.RS
+.EX
+LD_PRELOAD=libheapline.so HEAPLINE_OUTPUT=run.csv ./app
+heapline\-report run.csv
+.EE
+.RE
+.PP
+An MPI job, one record per rank:
+.PP
+.RS
+.EX
+mkdir records
+mpirun \-n 16 env LD_PRELOAD=libheapline.so \e
+    HEAPLINE_OUTPUT=$PWD/records/heapline.%h.%r.csv ./app
+heapline\-report records
+.EE
+.RE
+.SH NOTES
+On a cluster, the library must be installed on every node that runs the
+program.
+Where it is missing, the dynamic linker prints that it cannot be preloaded,
+ignores it, and the job runs without writing any record.
+Otherwise, give
+.B LD_PRELOAD
+the absolute path of the library on a shared file system.
+.PP
+A process killed by a signal writes no record.
+Statically linked programs, and programs that use another allocator such as
+jemalloc or tcmalloc, are not seen.
+.SH SEE ALSO
+The documentation, with the format of the records and the meaning of each
+figure, is at https://ethan\-puyaubreau.github.io/heapline/.

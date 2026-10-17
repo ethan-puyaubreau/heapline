@@ -1,0 +1,6 @@
+# libheapline.so is preloaded with LD_PRELOAD, never linked against: it has
+# no versioned soname and no libheapline package of its own.
+heapline: package-name-doesnt-match-sonames
+heapline: shared-library-lacks-version
+# The package is published on GitHub, not uploaded to Debian.
+heapline: initial-upload-closes-no-bugs

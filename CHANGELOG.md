@@ -18,6 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default.
 - CI runs `tsan_stress`, and runs the tests under the undefined behavior
   sanitizer.
+- Each release offers an archive for Linux aarch64 next to the x86_64 one.
+  It is also built on Rocky Linux 8 and needs nothing newer than glibc 2.17.
+- Each release offers an RPM and a Debian package for x86_64 and aarch64,
+  each with its `.sha256` file. They hold the files of the archive and
+  install `libheapline.so` in the default search path of the dynamic linker,
+  so `LD_PRELOAD=libheapline.so` works without a path. CI installs, runs and
+  removes the RPM on Rocky Linux 8 and 9 and the Debian package on Debian 12
+  and Ubuntu 22.04, on both architectures.
+- `heapline-report` has a manual page, installed in `share/man/man1`.
+- Tests `report_pie` and `man_page`.
+
+### Changed
+
+- `heapline-report` is a position independent executable, so address space
+  layout randomization now moves its code and data too.
+- The binaries of the release archives are stripped.
 
 ## [0.4.1] - 2026-10-11
 

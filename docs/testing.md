@@ -14,7 +14,7 @@ bounds where they are not, such as the peak with several threads (see
 | Fork | `fork_child` | A child forked while other threads are alive starts a thread, reads the counters without hanging, and holds the counts of its parent once |
 | Records | `record_*`, `record`, `peak_time_early`, `peak_time_late` | The rank read from each launcher variable and their order, the fallback to stderr, the CSV under a locale that writes a decimal comma, the time of an early and a late peak |
 | Report | `report_*` | `heapline-report` against recorded jobs: summary, `--top`, `--all`, `--csv`, and the warnings for missing, duplicate and huge ranks, truncated records, unknown versions and several jobs |
-| Packaging | `library_dependencies` | The library needs the C library only. The release job also checks that the archive needs nothing newer than glibc 2.17, see [Getting started](getting-started.md#prebuilt-archive) |
+| Packaging | `library_dependencies`, `report_pie`, `man_page` | The library needs the C library only, `heapline-report` is a position independent executable, and its manual page renders without warnings. The release workflow also checks that the archives need nothing newer than glibc 2.17, see [Getting started](getting-started.md#prebuilt-archives), and installs, runs and removes the RPM on Rocky Linux 8 and 9 and the Debian package on Debian 12 and Ubuntu 22.04 |
 | Tutorials | CI job `MPI example` | The MPI example on four ranks and its peaks, and the commands of the [plain tutorial](tutorial.md), with the relations it explains: untouched blocks not resident, an early and a late peak, a wrapper that overwrites the record |
 
 Tests that need more address space than the machine allows, such as the

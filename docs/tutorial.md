@@ -17,7 +17,7 @@ cmake --build build
 ```
 
 This builds `build/libheapline.so` and `build/heapline-report`. A prebuilt
-archive also exists, see [Getting started](getting-started.md#prebuilt-archive);
+archive also exists, see [Getting started](getting-started.md#prebuilt-archives);
 its `lib/libheapline.so` and `bin/heapline-report` replace the two files above
 in the commands below.
 
