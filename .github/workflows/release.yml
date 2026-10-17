@@ -39,7 +39,10 @@ jobs:
           version=$(grep -oP 'project\(heapline VERSION \K[0-9.]+' CMakeLists.txt)
           echo "VERSION=$version" >> "$GITHUB_ENV"
           # Dates the manual page with the commit rather than the build. The
-          # assignment fails the step if git cannot read the checkout.
+          # checkout belongs to another user than root in the container, and
+          # git refuses to read it unless it is marked safe. The assignment
+          # fails the step if git still cannot read it.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           epoch=$(git log -1 --format=%ct)
           echo "SOURCE_DATE_EPOCH=$epoch" >> "$GITHUB_ENV"
 
