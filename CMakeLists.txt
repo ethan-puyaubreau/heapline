@@ -50,6 +50,11 @@ include(GNUInstallDirs)
 install(TARGETS heapline LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES include/heapline.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(TARGETS heapline-report RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+# The date of the configure step, or SOURCE_DATE_EPOCH when it is set.
+string(TIMESTAMP HEAPLINE_MAN_DATE "%Y-%m-%d" UTC)
+configure_file(man/heapline-report.1.in heapline-report.1 @ONLY)
+install(FILES ${PROJECT_BINARY_DIR}/heapline-report.1
+        DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
 if(HEAPLINE_ENABLE_TESTS)
   enable_testing()
