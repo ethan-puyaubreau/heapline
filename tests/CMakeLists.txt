@@ -8,6 +8,15 @@ add_test(NAME alloc_pattern COMMAND alloc_pattern)
 set_tests_properties(alloc_pattern PROPERTIES
                      ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>)
 
+# Each entry point on its own, with exact counts and byte changes.
+add_executable(alloc_functions alloc_functions.cpp)
+target_include_directories(alloc_functions PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(alloc_functions PRIVATE ${CMAKE_DL_LIBS})
+target_compile_options(alloc_functions PRIVATE -fno-builtin)
+add_test(NAME alloc_functions COMMAND alloc_functions)
+set_tests_properties(alloc_functions PROPERTIES
+                     ENVIRONMENT LD_PRELOAD=$<TARGET_FILE:heapline>)
+
 add_executable(alloc_threads alloc_threads.cpp)
 target_include_directories(alloc_threads PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(alloc_threads PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
