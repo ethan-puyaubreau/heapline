@@ -12,7 +12,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-This builds `build/libheapline.so` and `build/heapline-report`.
+This builds `build/libheapline.so` and `build/heapline-report`. What the
+tests check, and the sanitizer builds that CI runs, are described in [How
+heapline is tested](testing.md).
 To install them, run `cmake --install build --prefix $HOME/opt/heapline`: the
 library goes to `$HOME/opt/heapline/lib` (`lib64` on some distributions, such
 as RHEL, Rocky or SUSE) and `heapline-report` to `$HOME/opt/heapline/bin`.
