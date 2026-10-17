@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Tests `alloc_functions`, which checks each allocation function on its own
+  with exact counts and byte changes, and `tsan_stress`.
+- The `HEAPLINE_ENABLE_TSAN` option builds `tsan_stress`, which stresses the
+  counters from many threads, with snapshots and forks, under
+  ThreadSanitizer. The library is built into the test with its entry points
+  renamed, since TSan cannot check it while it replaces malloc. It is off by
+  default.
+- CI runs `tsan_stress`, and runs the tests under the undefined behavior
+  sanitizer.
+
 ## [0.4.1] - 2026-10-11
 
 ### Added
