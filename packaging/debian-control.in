@@ -1,0 +1,15 @@
+Package: heapline
+Version: @VERSION@-1
+Architecture: @ARCH@
+Maintainer: Ethan Puyaubreau <ethan.puyaubreau@gmail.com>
+Installed-Size: @SIZE@
+Depends: libc6 (>= 2.17)
+Section: devel
+Priority: optional
+Homepage: https://github.com/ethan-puyaubreau/heapline
+Description: heap usage of a Linux program, without recompiling it
+ heapline is a small shared library loaded with LD_PRELOAD. It intercepts the
+ glibc allocation functions, counts allocations and releases, and tracks the
+ bytes in use and their peak. A summary is printed to stderr at exit, and a
+ CSV record can be written for each process, MPI rank included.
+ heapline-report merges the records of a job.
