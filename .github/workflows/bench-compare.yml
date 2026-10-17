@@ -1,0 +1,76 @@
+name: Benchmark comparison
+
+# Measures the overhead of a perf/ branch against main, in the same job so
+# that both run on the same machine. Nothing is published: the results go to
+# the run summary and an artifact, never to bench-data.
+on:
+  push:
+    branches: [ 'perf/**' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-compare-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    name: Compare overhead with main
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build the branch
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DHEAPLINE_ENABLE_BENCH=ON -DHEAPLINE_ENABLE_TESTS=OFF
+          cmake --build build --parallel
+
+      - name: Build main
+        run: |
+          git worktree add --detach base origin/main
+          cmake -S base -B base/build -DCMAKE_BUILD_TYPE=Release \
+            -DHEAPLINE_ENABLE_TESTS=OFF
+          cmake --build base/build --parallel --target heapline
+
+      # Both libraries run the workloads of the branch, one scenario after
+      # the other. run_overhead.sh takes its commit from the current
+      # directory, so main is measured from its worktree.
+      - name: Measure
+        shell: bash
+        run: |
+          set -o pipefail
+          churn=$PWD/build/bench/malloc_churn
+          script=$PWD/bench/run_overhead.sh
+          python_churn=$PWD/bench/python_churn.py
+          base_lib=$PWD/base/build/libheapline.so
+          head_lib=$PWD/build/libheapline.so
+          : >base.jsonl
+          : >head.jsonl
+          run() {
+            (cd base && sh "$script" "$1" "$base_lib" 10 -- "${@:2}") | tee -a base.jsonl
+            sh "$script" "$1" "$head_lib" 10 -- "${@:2}" | tee -a head.jsonl
+          }
+          run churn-1t "$churn" 1 10000000
+          run churn-4t "$churn" 4 10000000
+          run resident-4t "$churn" 4 10000000 16 4096 512
+          run large-4t "$churn" 4 2500000 65536 1048576
+          run python python3 "$python_churn"
+          test "$(wc -l <base.jsonl)" -eq 5
+          test "$(wc -l <head.jsonl)" -eq 5
+
+      - name: Summarize
+        run: python3 bench/compare_overhead.py base.jsonl head.jsonl >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the points
+        uses: actions/upload-artifact@v4
+        with:
+          name: overhead-points
+          path: |
+            base.jsonl
+            head.jsonl
