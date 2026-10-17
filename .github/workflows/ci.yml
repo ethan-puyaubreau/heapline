@@ -25,6 +25,10 @@ jobs:
       - name: Generate a comma locale
         run: sudo locale-gen fr_FR.UTF-8
 
+      # man_page skips itself without groff.
+      - name: Install groff
+        run: sudo apt-get update && sudo apt-get install -y groff-base
+
       - name: Configure
         run: >
           cmake -S . -B build

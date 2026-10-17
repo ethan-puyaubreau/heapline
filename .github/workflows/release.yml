@@ -8,18 +8,28 @@ on:
 
 jobs:
   linux:
-    name: Package Linux x86_64
+    name: Package Linux ${{ matrix.arch }}
     # Built on Rocky Linux 8 so that the library needs glibc 2.17 at most.
-    runs-on: ubuntu-24.04
-    container: rockylinux:8
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    container: rockylinux/rockylinux:8
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Install the toolchain
         # libstdc++-static is in the PowerTools repository, off by default.
         run: >
           dnf install -y --enablerepo=powertools gcc-c++ cmake make binutils
-          libstdc++-static python3 diffutils git tar gzip findutils
+          libstdc++-static python3 diffutils git tar gzip findutils rpm-build
+          groff-base cpio
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,6 +38,13 @@ jobs:
         run: |
           version=$(grep -oP 'project\(heapline VERSION \K[0-9.]+' CMakeLists.txt)
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          # Dates the manual page with the commit rather than the build. The
+          # checkout belongs to another user than root in the container, and
+          # git refuses to read it unless it is marked safe. The assignment
+          # fails the step if git still cannot read it.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          epoch=$(git log -1 --format=%ct)
+          echo "SOURCE_DATE_EPOCH=$epoch" >> "$GITHUB_ENV"
 
       - name: Check tag matches project version
         if: startsWith(github.ref, 'refs/tags/')
@@ -45,8 +62,8 @@ jobs:
 
       - name: Package archive
         run: |
-          name="heapline-v$VERSION-linux-x86_64"
-          cmake --install build --prefix "$name"
+          name="heapline-v$VERSION-linux-${{ matrix.arch }}"
+          cmake --install build --prefix "$name" --strip
           test -x "$name/bin/heapline-report"
           sh tests/check_dependencies.sh "$name/lib/libheapline.so" 2.17
           sh tests/check_dependencies.sh "$name/bin/heapline-report" 2.17
@@ -55,26 +72,118 @@ jobs:
           tar czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
 
+      # The RPM holds the files of the archive, checked above, byte for byte.
+      - name: Package RPM
+        run: |
+          rpmbuild -bb packaging/heapline.spec \
+            --define "_topdir $PWD/rpmbuild" \
+            --define "heapline_version $VERSION" \
+            --define "heapline_archive $PWD/heapline-v$VERSION-linux-${{ matrix.arch }}"
+          cp rpmbuild/RPMS/*/heapline-*.rpm .
+          for rpm in heapline-*.rpm; do sha256sum "$rpm" > "$rpm.sha256"; done
+          rpm -qlp heapline-*.rpm
+          archive="heapline-v$VERSION-linux-${{ matrix.arch }}"
+          mkdir rpm-files
+          rpm2cpio heapline-*.rpm | (cd rpm-files && cpio -id --quiet)
+          libdir=$(rpm --eval '%{_libdir}')
+          cmp "$archive/lib/libheapline.so" "rpm-files$libdir/libheapline.so"
+          cmp "$archive/bin/heapline-report" rpm-files/usr/bin/heapline-report
+          cmp "$archive/include/heapline.h" rpm-files/usr/include/heapline.h
+          cmp "$archive/share/man/man1/heapline-report.1" \
+            rpm-files/usr/share/man/man1/heapline-report.1
+
       - name: Upload archive
         uses: actions/upload-artifact@v4
         with:
-          name: archive
+          name: archive-${{ matrix.arch }}
           path: |
             heapline-v*.tar.gz
             heapline-v*.tar.gz.sha256
           if-no-files-found: error
 
-  smoke:
-    name: Run the archive on Ubuntu
+      - name: Upload RPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.arch }}
+          path: |
+            heapline-*.rpm
+            heapline-*.rpm.sha256
+          if-no-files-found: error
+
+  deb:
+    name: Package Debian ${{ matrix.arch }}
     needs: linux
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download archive
+        uses: actions/download-artifact@v4
+        with:
+          name: archive-${{ matrix.arch }}
+
+      # The Debian package holds the files of the archive, built on Rocky
+      # Linux 8 and checked there, byte for byte.
+      - name: Package Debian package
+        run: |
+          sha256sum -c heapline-v*.tar.gz.sha256
+          tar xzf heapline-v*.tar.gz
+          dir=$(ls -d heapline-v*-linux-${{ matrix.arch }})
+          version=${dir#heapline-v}
+          version=${version%-linux-*}
+          epoch=$(git log -1 --format=%ct)
+          SOURCE_DATE_EPOCH=$epoch sh packaging/build-deb.sh "$dir" "$version"
+          for deb in heapline_*.deb; do sha256sum "$deb" > "$deb.sha256"; done
+          dpkg-deb --info heapline_*.deb
+          dpkg-deb --contents heapline_*.deb
+          dpkg-deb -x heapline_*.deb deb-files
+          cmp "$dir/lib/libheapline.so" deb-files/usr/lib/*-linux-gnu/libheapline.so
+          cmp "$dir/bin/heapline-report" deb-files/usr/bin/heapline-report
+          cmp "$dir/include/heapline.h" deb-files/usr/include/heapline.h
+          zcat deb-files/usr/share/man/man1/heapline-report.1.gz |
+            cmp "$dir/share/man/man1/heapline-report.1" -
+
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: |
+            heapline_*.deb
+            heapline_*.deb.sha256
+          if-no-files-found: error
+
+  smoke:
+    name: Run the archive on Ubuntu ${{ matrix.arch }}
+    needs: linux
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Download archive
         uses: actions/download-artifact@v4
         with:
-          name: archive
+          name: archive-${{ matrix.arch }}
 
       - name: Check and extract
         run: |
@@ -85,31 +194,124 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          dir=$(ls -d "$PWD"/heapline-v*-linux-x86_64)
+          dir=$(ls -d "$PWD"/heapline-v*-linux-${{ matrix.arch }})
           "$dir/bin/heapline-report" --version
           LD_PRELOAD="$dir/lib/libheapline.so" HEAPLINE_OUTPUT=run.csv \
             python3 -c "x = [bytes(10**6) for i in range(50)]"
           "$dir/bin/heapline-report" run.csv | tee report.txt
           grep -q 'Peak heap' report.txt
 
+  smoke-deb:
+    name: Install the Debian package on ${{ matrix.image }} ${{ matrix.arch }}
+    needs: deb
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    container: ${{ matrix.image }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ x86_64, aarch64 ]
+        image: [ 'debian:12', 'ubuntu:22.04' ]
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Download Debian package
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+
+      - name: Install
+        run: |
+          sha256sum -c heapline_*.deb.sha256
+          apt-get update
+          apt-get install -y python3 ./heapline_*.deb
+
+      # A bare file name: the library is found in the default search path.
+      - name: Run a program under the library
+        shell: bash
+        run: |
+          set -o pipefail
+          heapline-report --version
+          LD_PRELOAD=libheapline.so HEAPLINE_OUTPUT=run.csv \
+            python3 -c "x = [bytes(10**6) for i in range(50)]"
+          heapline-report run.csv | tee report.txt
+          grep -q 'Peak heap' report.txt
+
+      - name: Remove
+        run: |
+          apt-get remove -y heapline
+          test ! -e /usr/bin/heapline-report
+
+  smoke-rpm:
+    name: Install the RPM on ${{ matrix.image }} ${{ matrix.arch }}
+    needs: linux
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    container: ${{ matrix.image }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ x86_64, aarch64 ]
+        image: [ 'rockylinux/rockylinux:8', 'rockylinux/rockylinux:9' ]
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Download RPM
+        uses: actions/download-artifact@v4
+        with:
+          name: rpm-${{ matrix.arch }}
+
+      - name: Install
+        run: |
+          sha256sum -c heapline-*.rpm.sha256
+          dnf install -y python3 ./heapline-*.rpm
+
+      # A bare file name: the library is found in the default search path.
+      - name: Run a program under the library
+        shell: bash
+        run: |
+          set -o pipefail
+          heapline-report --version
+          LD_PRELOAD=libheapline.so HEAPLINE_OUTPUT=run.csv \
+            python3 -c "x = [bytes(10**6) for i in range(50)]"
+          heapline-report run.csv | tee report.txt
+          grep -q 'Peak heap' report.txt
+
+      - name: Remove
+        run: |
+          dnf remove -y heapline
+          test ! -e /usr/bin/heapline-report
+
   publish:
     name: Publish release
-    needs: smoke
+    needs: [ smoke, smoke-deb, smoke-rpm ]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
-      - name: Download archive
+      - name: Download packages
         uses: actions/download-artifact@v4
         with:
-          name: archive
+          merge-multiple: true
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$GITHUB_REF_NAME" heapline-v*.tar.gz* \
+          gh release create "$GITHUB_REF_NAME" \
+            heapline-v*.tar.gz* heapline_*.deb* heapline-*.rpm* \
             --title "heapline $GITHUB_REF_NAME" \
             --generate-notes

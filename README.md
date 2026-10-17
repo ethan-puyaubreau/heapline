@@ -17,9 +17,10 @@ heapline: 4153 allocs, 4123 frees, peak 288.3 MiB, live at exit 472.2 KiB
 
 ## Build
 
-A prebuilt archive for Linux x86_64 is on the
+Prebuilt archives for Linux x86_64 and aarch64, and RPM and Debian packages,
+are on the
 [release page](https://github.com/ethan-puyaubreau/heapline/releases); the
-"Getting started" page of the documentation describes it. To build from
+"Getting started" page of the documentation describes them. To build from
 source:
 
 Requirements: Linux with glibc, CMake 3.16 or newer, a C++17 compiler.

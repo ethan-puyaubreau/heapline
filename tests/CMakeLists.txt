@@ -136,6 +136,18 @@ add_test(NAME record COMMAND record_test)
 
 set(report $<TARGET_FILE:heapline-report>)
 set(data ${CMAKE_CURRENT_SOURCE_DIR}/data)
+# heapline-report is a position independent executable.
+add_test(NAME report_pie
+         COMMAND sh -c "command -v readelf >/dev/null || exit 77; \
+           LC_ALL=C readelf -h \"$1\" | grep -q 'Type: *DYN'"
+                 sh ${report})
+set_tests_properties(report_pie PROPERTIES SKIP_RETURN_CODE 77)
+# The manual page renders without warnings.
+add_test(NAME man_page
+         COMMAND sh -c "command -v groff >/dev/null || exit 77; \
+           groff -man -ww -z \"$1\" 2>&1 | grep . && exit 1; exit 0"
+                 sh ${PROJECT_BINARY_DIR}/heapline-report.1)
+set_tests_properties(man_page PROPERTIES SKIP_RETURN_CODE 77)
 add_test(NAME report_job
          COMMAND sh -c "\"$1\" \"$2/job\" | diff -u \"$2/job.expected\" -"
                  sh ${report} ${data})
