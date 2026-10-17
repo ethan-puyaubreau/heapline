@@ -384,6 +384,32 @@ void retire(void* arg) {
   pthread_mutex_unlock(&registry_mutex);
 }
 
+void account_without_node(int64_t delta, bool is_alloc);
+
+/**
+ * @brief Publish the @p pending bytes of a thread that went beyond its limit
+ * with an operation of @p delta bytes, after @p held bytes held back.
+ *
+ * The bytes are published with one atomic addition, but the peak is raised
+ * in two steps: to the live bytes without the operation, which moves no time,
+ * then to the live bytes with it. The held bytes date from an earlier moment
+ * that is not known, for example from before the limit dropped to 0 as other
+ * threads exited: they must not move the time of the peak, which only the
+ * operation, happening now, may do.
+ *
+ * Kept out of line, so that the allocation path stays small. In a small heap
+ * with several threads, it runs on most operations, so it is not marked cold.
+ */
+__attribute__((noinline)) void publish_pending(ThreadCounters* counters,
+                                               int64_t held, int64_t pending,
+                                               int64_t delta) {
+  counters->pending.store(0, std::memory_order_relaxed);
+  int64_t live =
+      shared.live_bytes.fetch_add(pending, std::memory_order_relaxed) + pending;
+  if (held != 0) raise_peak(live - delta, false);
+  raise_peak(live, true);
+}
+
 /**
  * @brief Count one operation of @p delta bytes: the usable size for an
  * allocation, minus the usable size for a release.
@@ -391,25 +417,17 @@ void retire(void* arg) {
  * The usable size is read back from the allocator, so no table of live
  * pointers is needed and nothing is allocated on this path.
  *
- * When the operation takes the thread beyond its limit, the bytes held back
- * before it and the operation are published with one atomic addition, but
- * the peak is raised in two steps: to the live bytes without the operation,
- * which moves no time, then to the live bytes with it. The held bytes date
- * from an earlier moment that is not known, for example from before the
- * limit dropped to 0 as other threads exited: they must not move the time of
- * the peak, which only the operation, happening now, may do.
+ * Inlined in the entry points: the usual case, a thread with a node that
+ * stays within its limit, only updates its own counters. Registration and
+ * publication are out of line, see account_without_node() and
+ * publish_pending().
  */
-void account(int64_t delta, bool is_alloc) {
+__attribute__((always_inline)) inline void account(int64_t delta,
+                                                   bool is_alloc) {
   ThreadCounters* counters = local;
   if (__builtin_expect(!counters, 0)) {
-    if (!registered) register_thread();
-    counters = local;
-    if (!counters) {
-      (is_alloc ? alloc_count : free_count)
-          .fetch_add(1, std::memory_order_relaxed);
-      publish(delta, true);
-      return;
-    }
+    account_without_node(delta, is_alloc);
+    return;
   }
   std::atomic<uint64_t>& count = is_alloc ? counters->allocs : counters->frees;
   count.store(count.load(std::memory_order_relaxed) + 1,
@@ -418,16 +436,26 @@ void account(int64_t delta, bool is_alloc) {
   int64_t pending = held + delta;
   int64_t limit   = shared.peak_bytes.load(std::memory_order_relaxed) >>
                   shared.limit_shift.load(std::memory_order_relaxed);
-  if (pending > limit || pending < -limit) {
-    counters->pending.store(0, std::memory_order_relaxed);
-    int64_t live =
-        shared.live_bytes.fetch_add(pending, std::memory_order_relaxed) +
-        pending;
-    if (held != 0) raise_peak(live - delta, false);
-    raise_peak(live, true);
-  } else {
+  if (pending > limit || pending < -limit)
+    publish_pending(counters, held, pending, delta);
+  else
     counters->pending.store(pending, std::memory_order_relaxed);
+}
+
+/**
+ * @brief Count one operation of a thread that has no node: register the
+ * thread on its first operation, then count in its node, or in the globals
+ * when it has none.
+ */
+__attribute__((noinline, cold)) void account_without_node(int64_t delta,
+                                                          bool is_alloc) {
+  if (!registered) register_thread();
+  if (local) {
+    account(delta, is_alloc);
+    return;
   }
+  (is_alloc ? alloc_count : free_count).fetch_add(1, std::memory_order_relaxed);
+  publish(delta, true);
 }
 
 /**
