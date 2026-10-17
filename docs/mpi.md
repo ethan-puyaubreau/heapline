@@ -49,7 +49,9 @@ mpirun -n 16 env LD_PRELOAD=$PWD/build/libheapline.so HEAPLINE_OUTPUT=$PWD/recor
 
 With Open MPI on a machine with fewer than 16 cores, add `--oversubscribe`
 after `mpirun` (MPICH has no such option). With an installed copy, use the
-path of the installed library instead of `$PWD/build/libheapline.so`.
+path of the installed library instead of `$PWD/build/libheapline.so`. With the
+RPM or the Debian package installed on every node, `libheapline.so` without a
+path is enough (see [Packages](getting-started.md#packages)).
 
 Keep `env` directly in front of the program. A script or `/usr/bin/time`
 between them would be preloaded too, and its record can replace the program's:
