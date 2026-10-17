@@ -18,6 +18,10 @@ add_compile_options(-Wall -Wextra -Wpedantic
 
 find_package(Threads REQUIRED)
 
+# Lets POSITION_INDEPENDENT_CODE link executables with -pie.
+include(CheckPIESupported)
+check_pie_supported()
+
 add_library(heapline SHARED src/heapline.cpp src/record.cpp)
 target_include_directories(heapline PUBLIC include PRIVATE src)
 target_link_libraries(heapline PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
@@ -29,6 +33,11 @@ target_link_options(heapline PRIVATE -Wl,--as-needed)
 add_executable(heapline-report tools/heapline-report.cpp)
 target_compile_definitions(heapline-report
                            PRIVATE HEAPLINE_VERSION="${PROJECT_VERSION}")
+# A position independent executable with read-only relocations, as
+# distributions build them, so that address space layout randomization also
+# moves its code and data.
+set_target_properties(heapline-report PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_options(heapline-report PRIVATE -Wl,-z,relro,-z,now)
 # std::filesystem needs -lstdc++fs before GCC 9.1 (RHEL and Rocky 8 system GCC).
 target_link_libraries(heapline-report PRIVATE
   $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.1>>:stdc++fs>)
