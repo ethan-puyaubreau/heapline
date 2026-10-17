@@ -26,6 +26,19 @@
 #include <iterator>
 #include <new>
 
+/**
+ * @brief Name of an allocation entry point. The ThreadSanitizer stress test
+ * builds the library into its program with HEAPLINE_TEST_ENTRY_POINTS and
+ * calls the entry points under other names itself. The runtime of TSan
+ * allocates while it starts a thread, before the thread exists for it, so the
+ * library cannot be checked when it replaces malloc.
+ */
+#ifdef HEAPLINE_TEST_ENTRY_POINTS
+#define HEAPLINE_ENTRY(name) heapline_test_##name
+#else
+#define HEAPLINE_ENTRY(name) name
+#endif
+
 namespace {
 
 using MallocFn        = void* (*)(size_t);
@@ -609,7 +622,7 @@ extern "C" void heapline_get_stats(heapline_stats* stats) {
   *stats = totals();
 }
 
-extern "C" void* malloc(size_t size) noexcept {
+extern "C" void* HEAPLINE_ENTRY(malloc)(size_t size) noexcept {
   if (!real_malloc) resolve();
   if (!real_malloc) return bootstrap_alloc(size);
   void* ptr = real_malloc(size);
@@ -617,14 +630,14 @@ extern "C" void* malloc(size_t size) noexcept {
   return ptr;
 }
 
-extern "C" void free(void* ptr) noexcept {
+extern "C" void HEAPLINE_ENTRY(free)(void* ptr) noexcept {
   if (from_bootstrap(ptr)) return;
   if (!real_free) resolve();
   record_free(ptr, malloc_usable_size(ptr));
   real_free(ptr);
 }
 
-extern "C" void* calloc(size_t count, size_t size) noexcept {
+extern "C" void* HEAPLINE_ENTRY(calloc)(size_t count, size_t size) noexcept {
   if (!real_calloc) resolve();
   if (!real_calloc) {
     if (size != 0 && count > SIZE_MAX / size) return nullptr;
@@ -639,9 +652,9 @@ extern "C" void* calloc(size_t count, size_t size) noexcept {
  * @brief Counted as a release of the old block followed by an allocation of
  * the new one, so that allocations and releases stay balanced.
  */
-extern "C" void* realloc(void* ptr, size_t size) noexcept {
+extern "C" void* HEAPLINE_ENTRY(realloc)(void* ptr, size_t size) noexcept {
   if (from_bootstrap(ptr)) {
-    void* moved = malloc(size);
+    void* moved = HEAPLINE_ENTRY(malloc)(size);
     if (moved) {
       auto* end = bootstrap_buf + sizeof(bootstrap_buf);
       std::memcpy(moved, ptr,
@@ -657,15 +670,16 @@ extern "C" void* realloc(void* ptr, size_t size) noexcept {
   return moved;
 }
 
-extern "C" int posix_memalign(void** ptr, size_t alignment,
-                              size_t size) noexcept {
+extern "C" int HEAPLINE_ENTRY(posix_memalign)(void** ptr, size_t alignment,
+                                              size_t size) noexcept {
   if (!real_posix_memalign) resolve();
   int err = real_posix_memalign(ptr, alignment, size);
   if (err == 0) record_alloc(*ptr);
   return err;
 }
 
-extern "C" void* aligned_alloc(size_t alignment, size_t size) noexcept {
+extern "C" void* HEAPLINE_ENTRY(aligned_alloc)(size_t alignment,
+                                               size_t size) noexcept {
   if (!real_aligned_alloc) resolve();
   void* ptr = real_aligned_alloc(alignment, size);
   record_alloc(ptr);
@@ -676,21 +690,22 @@ extern "C" void* aligned_alloc(size_t alignment, size_t size) noexcept {
  * @brief Legacy page and alignment allocators, still found in older codes.
  * Tracked so that releasing their blocks keeps the live byte count right.
  */
-extern "C" void* memalign(size_t alignment, size_t size) noexcept {
+extern "C" void* HEAPLINE_ENTRY(memalign)(size_t alignment,
+                                          size_t size) noexcept {
   if (!real_memalign) resolve();
   void* ptr = real_memalign(alignment, size);
   record_alloc(ptr);
   return ptr;
 }
 
-extern "C" void* valloc(size_t size) noexcept {
+extern "C" void* HEAPLINE_ENTRY(valloc)(size_t size) noexcept {
   if (!real_valloc) resolve();
   void* ptr = real_valloc(size);
   record_alloc(ptr);
   return ptr;
 }
 
-extern "C" void* pvalloc(size_t size) noexcept {
+extern "C" void* HEAPLINE_ENTRY(pvalloc)(size_t size) noexcept {
   if (!real_pvalloc) resolve();
   void* ptr = real_pvalloc(size);
   record_alloc(ptr);

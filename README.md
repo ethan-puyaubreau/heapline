@@ -35,6 +35,7 @@ ctest --test-dir build --output-on-failure
 | `HEAPLINE_ENABLE_TESTS` | `ON` | Build the tests |
 | `HEAPLINE_ENABLE_WERROR` | `OFF` | Treat compiler warnings as errors |
 | `HEAPLINE_ENABLE_EXAMPLES` | `OFF` | Build the examples, which need MPI |
+| `HEAPLINE_ENABLE_TSAN` | `OFF` | Build the ThreadSanitizer stress test |
 | `HEAPLINE_ENABLE_BENCH` | `OFF` | Build the overhead benchmark |
 | `HEAPLINE_STATIC_RUNTIME` | `OFF` | Link `heapline-report` with libstdc++ and libgcc statically, which needs `libstdc++-static` on RHEL |
 

@@ -110,6 +110,25 @@ add_test(NAME peak_time_threads
                  $<TARGET_FILE:peak_time_threads> threads)
 set_tests_properties(peak_time_threads PROPERTIES TIMEOUT 30)
 
+# The library built into the test under ThreadSanitizer, with its entry points
+# renamed: TSan cannot check it while it replaces malloc. The other targets are
+# built without TSan.
+if(HEAPLINE_ENABLE_TSAN)
+  add_executable(tsan_stress tsan_stress.cpp
+                 ${PROJECT_SOURCE_DIR}/src/heapline.cpp
+                 ${PROJECT_SOURCE_DIR}/src/record.cpp)
+  target_include_directories(tsan_stress PRIVATE ${PROJECT_SOURCE_DIR}/include
+                                                 ${PROJECT_SOURCE_DIR}/src)
+  target_compile_definitions(tsan_stress PRIVATE HEAPLINE_TEST_ENTRY_POINTS)
+  target_compile_options(tsan_stress PRIVATE -fsanitize=thread)
+  target_link_options(tsan_stress PRIVATE -fsanitize=thread)
+  target_link_libraries(tsan_stress PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
+  add_test(NAME tsan_stress COMMAND tsan_stress)
+  set_tests_properties(tsan_stress PROPERTIES
+                       ENVIRONMENT TSAN_OPTIONS=halt_on_error=1
+                       TIMEOUT 120)
+endif()
+
 # Pure helpers of the library, tested without preloading it.
 add_executable(record_test record_test.cpp ${PROJECT_SOURCE_DIR}/src/record.cpp)
 target_include_directories(record_test PRIVATE ${PROJECT_SOURCE_DIR}/src)

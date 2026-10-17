@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(HEAPLINE_ENABLE_WERROR "Treat compiler warnings as errors" OFF)
 option(HEAPLINE_ENABLE_TESTS "Build the tests" ON)
+option(HEAPLINE_ENABLE_TSAN "Build the ThreadSanitizer stress test" OFF)
 option(HEAPLINE_ENABLE_BENCH "Build the overhead benchmark" OFF)
 option(HEAPLINE_ENABLE_EXAMPLES "Build the examples, which need MPI" OFF)
 option(HEAPLINE_STATIC_RUNTIME
