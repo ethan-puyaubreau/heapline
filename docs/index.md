@@ -27,6 +27,7 @@ mpi
 report
 format
 peak-memory
+case-study
 limitations
 testing
 performance
