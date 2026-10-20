@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A case study page measures miniAMR, LULESH and CloverLeaf under heapline,
+  built with Spack, and checks the figures against GNU time and miniAMR's own
+  count.
+
 ## [0.5.0] - 2026-10-17
 
 ### Added
