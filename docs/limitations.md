@@ -18,7 +18,11 @@
   starting, exiting or reading the totals. `fork`, `vfork` and `posix_spawn`
   are not affected.
 - Memory obtained with `mmap` directly, or allocated on a GPU, is not heap
-  and is not counted.
+  and is not counted. For a program that takes most of its memory this way,
+  the heap peak says little and only `vmhwm_bytes` tells its footprint. GCC
+  is one: its garbage collector maps its pages with `mmap`, and `cc1plus`
+  compiling a C++ file showed a heap peak of 13.5 MiB for a `VmHWM` of
+  199 MiB.
 - A process killed by a signal writes no record. `heapline-report` lists it as
   a missing rank, unless it was the highest rank of the job, which it cannot
   tell apart from a smaller job.
