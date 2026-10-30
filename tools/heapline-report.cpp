@@ -30,12 +30,14 @@ namespace {
 namespace fs = std::filesystem;
 
 /**
- * @brief Column names of a version 1 record, in order.
+ * @brief Column names of a version 1 record, in order. Version 2 adds
+ * complete at the end.
  */
-const char* const kColumns =
+const std::string kColumnsV1 =
     "rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,"
     "peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,"
     "vmrss_at_exit_bytes";
+const std::string kColumns = kColumnsV1 + ",complete";
 
 /**
  * @brief One process of the job, as read from its record.
@@ -53,8 +55,9 @@ struct Process {
   long long live_heap_at_exit_bytes = 0;
   long long vmhwm_bytes             = -1;
   long long vmrss_at_exit_bytes     = -1;
-  std::string values;  ///< Raw CSV values, kept for --csv.
-  std::string file;    ///< Path of the record, kept for warnings.
+  bool complete = true;  ///< False for the last snapshot of a killed process.
+  std::string values;    ///< Raw CSV values in version 2, kept for --csv.
+  std::string file;      ///< Path of the record, kept for warnings.
 };
 
 /**
@@ -129,6 +132,9 @@ bool parse(const std::string& text, double& value) {
 /**
  * @brief Read the record in @p path into @p process.
  *
+ * A version 1 record is read as a complete version 2 record: version 1 has no
+ * snapshots.
+ *
  * @return An empty string on success, the reason of the failure otherwise.
  */
 std::string read_record(const fs::path& path, Process& process) {
@@ -139,14 +145,19 @@ std::string read_record(const fs::path& path, Process& process) {
   std::string values;
   if (!read_line(in, tag) || tag.rfind("# heapline ", 0) != 0)
     return "not a heapline record";
-  if (tag != "# heapline 1")
+  const bool v1 = tag == "# heapline 1";
+  if (!v1 && tag != "# heapline 2")
     return "unsupported format version " + tag.substr(11);
-  if (!read_line(in, columns) || columns != kColumns)
+  if (!read_line(in, columns) || columns != (v1 ? kColumnsV1 : kColumns))
     return "unexpected columns";
   if (!read_line(in, values) || values.empty()) return "missing values";
+  if (v1) values += ",1";
   std::vector<std::string> f = split(values);
-  if (f.size() != 12)
-    return "expected 12 values, found " + std::to_string(f.size());
+  if (f.size() != 13)
+    return "expected " + std::to_string(v1 ? 12 : 13) + " values, found " +
+           std::to_string(f.size() - (v1 ? 1 : 0));
+  if (f[12] != "0" && f[12] != "1") return "bad value in column complete";
+  process.complete = f[12] == "1";
 
   static const char* const names[] = {"rank",
                                       "host",
@@ -272,6 +283,24 @@ void warn_duplicate_ranks(const std::vector<Process>& processes) {
 }
 
 /**
+ * @brief Warn about the processes that left a snapshot rather than a record
+ * written at exit: they were killed, by the OOM killer for instance, or ended
+ * without running the library destructor. Ranks are listed, or the file when
+ * the process had no rank.
+ */
+void warn_snapshots(const std::vector<Process>& processes) {
+  std::vector<std::string> names;
+  for (const auto& p : processes) {
+    if (p.complete) continue;
+    names.push_back(p.rank >= 0 ? "rank " + std::to_string(p.rank) : p.file);
+    if (names.size() > kListed) break;
+  }
+  if (!names.empty())
+    warn("no exit record for " + join(names) +
+         " (killed?): figures from the last snapshot");
+}
+
+/**
  * @brief Warn when the records do not all carry the same job identifier.
  */
 void warn_several_jobs(const std::vector<Process>& processes) {
@@ -377,7 +406,7 @@ bool write_csv(const std::string& path, std::vector<Process> processes) {
             });
   std::ofstream out(path);
   if (!out) return false;
-  out << "# heapline 1\n" << kColumns << '\n';
+  out << "# heapline 2\n" << kColumns << '\n';
   for (const auto& p : processes) out << p.values << '\n';
   return static_cast<bool>(out);
 }
@@ -452,6 +481,7 @@ int main(int argc, char** argv) {
     if (!missing.empty())
       warn("missing ranks: " + join(missing) + " (killed or never started?)");
     warn_duplicate_ranks(processes);
+    warn_snapshots(processes);
     warn_several_jobs(processes);
     print_report(processes, options);
     if (!options.csv.empty() && !write_csv(options.csv, processes)) {

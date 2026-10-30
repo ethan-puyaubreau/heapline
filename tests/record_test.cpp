@@ -104,7 +104,8 @@ void test_status() {
       heapline::parse_status("VmHWM:\t 99999999999999999999 kB\n");
   check(overflow.vmhwm_bytes == -1, "an overflowing VmHWM gives -1");
 
-  heapline::ProcStatus own = heapline::read_status();
+  char text[4096];
+  heapline::ProcStatus own = heapline::read_status(text, sizeof(text));
   check(own.vmhwm_bytes > 0, "own VmHWM is read");
   check(own.vmrss_bytes > 0, "own VmRSS is read");
   check(own.vmhwm_bytes >= own.vmrss_bytes, "VmHWM covers VmRSS");
@@ -128,13 +129,19 @@ void test_format_record() {
   char buf[1024];
   int len = heapline::format_record(buf, sizeof(buf), record);
   const char* expected =
-      "# heapline 1\n"
+      "# heapline 2\n"
       "rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,"
       "peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,"
-      "vmrss_at_exit_bytes\n"
-      "3,node_a_b,1234,4242,12.500,100,90,1048576,4.250,512,2097152,1572864\n";
+      "vmrss_at_exit_bytes,complete\n"
+      "3,node_a_b,1234,4242,12.500,100,90,1048576,4.250,512,2097152,1572864,"
+      "1\n";
   check(std::strcmp(buf, expected) == 0, "record text");
   check(len == static_cast<int>(std::strlen(expected)), "record length");
+
+  record.complete = false;
+  heapline::format_record(buf, sizeof(buf), record);
+  check(std::strstr(buf, ",1572864,0\n") != nullptr,
+        "a snapshot is marked as not complete");
 
   char small[16];
   check(heapline::format_record(small, sizeof(small), record) == -1,
@@ -146,17 +153,17 @@ void test_format_record_times() {
   char buf[1024];
   record.elapsed_s = 1.0005;
   heapline::format_record(buf, sizeof(buf), record);
-  check(std::strstr(buf, "\n-1,,0,,1.001,0,0,0,0.000,0,-1,-1\n") != nullptr,
+  check(std::strstr(buf, "\n-1,,0,,1.001,0,0,0,0.000,0,-1,-1,1\n") != nullptr,
         "elapsed_s is rounded half up to milliseconds");
 
   record.elapsed_s = 0;
   heapline::format_record(buf, sizeof(buf), record);
-  check(std::strstr(buf, "\n-1,,0,,0.000,0,0,0,0.000,0,-1,-1\n") != nullptr,
+  check(std::strstr(buf, "\n-1,,0,,0.000,0,0,0,0.000,0,-1,-1,1\n") != nullptr,
         "zero time prints 0.000");
 
   record.elapsed_s = -2;
   heapline::format_record(buf, sizeof(buf), record);
-  check(std::strstr(buf, "\n-1,,0,,0.000,0,0,0,0.000,0,-1,-1\n") != nullptr,
+  check(std::strstr(buf, "\n-1,,0,,0.000,0,0,0,0.000,0,-1,-1,1\n") != nullptr,
         "negative time is clamped to 0.000");
 }
 
@@ -176,7 +183,7 @@ void test_format_record_locale() {
   record.peak_heap_time_s = 4.25;
   char buf[1024];
   heapline::format_record(buf, sizeof(buf), record);
-  check(std::strstr(buf, "\n-1,,0,,12.500,0,0,0,4.250,0,-1,-1\n") != nullptr,
+  check(std::strstr(buf, "\n-1,,0,,12.500,0,0,0,4.250,0,-1,-1,1\n") != nullptr,
         "times keep the dot under a comma locale");
   std::setlocale(LC_NUMERIC, "C");
 }

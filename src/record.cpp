@@ -114,14 +114,13 @@ ProcStatus parse_status(const char* text) {
   return {field_bytes(text, "VmHWM"), field_bytes(text, "VmRSS")};
 }
 
-ProcStatus read_status() {
-  char buf[16384];
+ProcStatus read_status(char* buf, size_t len) {
+  if (len == 0) return {};
   int fd = open("/proc/self/status", O_RDONLY | O_CLOEXEC);
   if (fd < 0) return {};
   size_t used = 0;
   ssize_t n   = 0;
-  while (used + 1 < sizeof(buf) &&
-         (n = read(fd, buf + used, sizeof(buf) - 1 - used)) > 0)
+  while (used + 1 < len && (n = read(fd, buf + used, len - 1 - used)) > 0)
     used += static_cast<size_t>(n);
   close(fd);
   buf[used] = '\0';
@@ -137,14 +136,16 @@ int format_record(char* buf, size_t len, const Record& record) {
   const long long peak_ms    = to_millis(record.peak_heap_time_s);
   int n                      = std::snprintf(
       buf, len,
-      "%s%ld,%s,%ld,%s,%lld.%03lld,%llu,%llu,%lld,%lld.%03lld,%lld,%lld,%lld\n",
+      "%s%ld,%s,%ld,%s,%lld.%03lld,%llu,%llu,%lld,%lld.%03lld,%lld,%lld,%lld,"
+                           "%d\n",
       kRecordHeader, record.rank, host, record.pid, job, elapsed_ms / 1000,
       elapsed_ms % 1000, static_cast<unsigned long long>(record.allocs),
       static_cast<unsigned long long>(record.frees),
       static_cast<long long>(record.peak_heap_bytes), peak_ms / 1000,
       peak_ms % 1000, static_cast<long long>(record.live_heap_at_exit_bytes),
       static_cast<long long>(record.vmhwm_bytes),
-      static_cast<long long>(record.vmrss_at_exit_bytes));
+      static_cast<long long>(record.vmrss_at_exit_bytes),
+      record.complete ? 1 : 0);
   return n < 0 || static_cast<size_t>(n) >= len ? -1 : n;
 }
 

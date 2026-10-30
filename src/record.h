@@ -56,11 +56,12 @@ struct ProcStatus {
 ProcStatus parse_status(const char* text);
 
 /**
- * @brief Read /proc/self/status into a stack buffer and parse it.
+ * @brief Read /proc/self/status into @p buf, of @p len bytes, and parse it.
  *
- * Does not allocate, so it can run from the library destructor.
+ * Does not allocate, so it can run from the library destructor and from the
+ * allocation path.
  */
-ProcStatus read_status();
+ProcStatus read_status(char* buf, size_t len);
 
 /**
  * @brief Values written to the record of one process.
@@ -78,16 +79,17 @@ struct Record {
   int64_t live_heap_at_exit_bytes = 0;   ///< Live heap at exit.
   int64_t vmhwm_bytes             = -1;  ///< Peak resident set size.
   int64_t vmrss_at_exit_bytes     = -1;  ///< Resident set size at exit.
+  bool complete = true;  ///< Written at exit, rather than a snapshot.
 };
 
 /**
- * @brief First two lines of a version 1 record: format tag and column names.
+ * @brief First two lines of a version 2 record: format tag and column names.
  */
 inline constexpr char kRecordHeader[] =
-    "# heapline 1\n"
+    "# heapline 2\n"
     "rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,"
     "peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,"
-    "vmrss_at_exit_bytes\n";
+    "vmrss_at_exit_bytes,complete\n";
 
 /**
  * @brief Write the header and the values of @p record as CSV into @p buf.
