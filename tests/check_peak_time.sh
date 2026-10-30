@@ -13,7 +13,8 @@ test -f "$dir/record.csv" || { echo "no record written"; exit 1; }
 # Columns: 5 elapsed_s, 8 peak_heap_bytes, 9 peak_heap_time_s.
 awk -F, -v mode="$mode" '
   NR == 3 {
-    if (NF != 12) { print "expected 12 values, got " NF; bad = 1 }
+    if (NF != 13) { print "expected 13 values, got " NF; bad = 1 }
+    if ($13 != 1) { print "complete " $13 ", expected 1"; bad = 1 }
     if ($8 < 16777216) { print "heap peak " $8 " below 16 MiB"; bad = 1 }
     if (mode == "early") {
       if ($9 >= 0.5) { print "early peak time " $9 ", expected below 0.5"; bad = 1 }

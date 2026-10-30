@@ -15,11 +15,12 @@ test "$#" -eq 1 && test -f "$1" || { echo "expected one record"; exit 1; }
 # The test program allocates little next to the libraries mapped in the
 # process, so its VmHWM must cover the heap peak.
 awk -F, -v rank="$rank" '
-  NR == 1 && $0 != "# heapline 1" { print "bad tag: " $0; bad = 1 }
-  NR == 2 && $0 != "rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,vmrss_at_exit_bytes" {
+  NR == 1 && $0 != "# heapline 2" { print "bad tag: " $0; bad = 1 }
+  NR == 2 && $0 != "rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,vmrss_at_exit_bytes,complete" {
     print "bad columns: " $0; bad = 1 }
   NR == 3 {
-    if (NF != 12) { print "expected 12 values, got " NF; bad = 1 }
+    if (NF != 13) { print "expected 13 values, got " NF; bad = 1 }
+    if ($13 != 1) { print "complete " $13 ", expected 1"; bad = 1 }
     if ($1 != rank) { print "rank " $1 ", expected " rank; bad = 1 }
     if ($2 == "") { print "empty host"; bad = 1 }
     if ($6 <= 0) { print "no allocation counted"; bad = 1 }

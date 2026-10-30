@@ -86,6 +86,9 @@ std::atomic<uint64_t> free_count{0};
  * peak_bytes is the highest value reached by live_bytes, and peak_time_ns the
  * CLOCK_MONOTONIC_COARSE time, in nanoseconds, at which it was last raised
  * with a time stamp. They are stored apart, so the two may briefly disagree.
+ * next_snapshot is the peak at which the record is next rewritten, see
+ * snapshot(), or INT64_MAX when snapshots are off. It shares the line of the
+ * peak, which raise_peak() has just written when it reads it.
  *
  * A registered thread holds back at most peak_bytes >> limit_shift bytes, for
  * the limit_shift it last read. See shift_for() for the total.
@@ -94,6 +97,7 @@ struct alignas(64) Shared {
   alignas(64) std::atomic<int64_t> live_bytes{0};
   alignas(64) std::atomic<int64_t> peak_bytes{0};
   std::atomic<int64_t> peak_time_ns{0};
+  std::atomic<int64_t> next_snapshot{INT64_MAX};
   alignas(64) std::atomic<int> limit_shift{63};
 };
 
@@ -159,6 +163,24 @@ char* chunk_end              = nullptr;
  */
 pthread_key_t exit_key;
 std::atomic<bool> registry_ready{false};
+
+/**
+ * @brief Peak at which the first snapshot is written, so that a small process
+ * writes its record at exit only. The ThreadSanitizer stress test, whose
+ * blocks are small, takes snapshots from the start.
+ */
+#ifdef HEAPLINE_TEST_ENTRY_POINTS
+constexpr int64_t kFirstSnapshotBytes = 0;
+#else
+constexpr int64_t kFirstSnapshotBytes = 16 << 20;
+#endif
+
+/**
+ * @brief File of the record that snapshot() rewrites, or -1 before the first
+ * snapshot, and the length of what it holds. Guarded by registry_mutex.
+ */
+int snapshot_fd     = -1;
+int snapshot_length = 0;
 
 /**
  * @brief CLOCK_MONOTONIC time, in nanoseconds, at which the library was
@@ -240,6 +262,8 @@ int shift_for(int64_t threads) {
   return shift;
 }
 
+void snapshot();
+
 /**
  * @brief Raise the peak to @p live if it is lower, and return the peak.
  *
@@ -255,6 +279,9 @@ int64_t raise_peak(int64_t live, bool stamp) {
       if (stamp)
         shared.peak_time_ns.store(now_ns(CLOCK_MONOTONIC_COARSE),
                                   std::memory_order_relaxed);
+      if (__builtin_expect(
+              live >= shared.next_snapshot.load(std::memory_order_relaxed), 0))
+        snapshot();
       return live;
     }
   }
@@ -447,6 +474,24 @@ void record_free(void* ptr, size_t size) {
 }
 
 /**
+ * @brief The globals plus the counters of the registered threads, without the
+ * peak. Called with registry_mutex held.
+ */
+heapline_stats sum_counters() {
+  heapline_stats stats{};
+  stats.allocs     = alloc_count.load(std::memory_order_relaxed);
+  stats.frees      = free_count.load(std::memory_order_relaxed);
+  stats.live_bytes = shared.live_bytes.load(std::memory_order_relaxed);
+  for (ThreadCounters* counters = registry; counters;
+       counters                 = counters->next) {
+    stats.allocs += counters->allocs.load(std::memory_order_relaxed);
+    stats.frees += counters->frees.load(std::memory_order_relaxed);
+    stats.live_bytes += counters->pending.load(std::memory_order_relaxed);
+  }
+  return stats;
+}
+
+/**
  * @brief Exact totals: the globals plus the counters of the threads still
  * registered. An operation in progress in another thread may be missing. The
  * peak is raised to the live bytes, which include the bytes held back by the
@@ -458,17 +503,8 @@ void record_free(void* ptr, size_t size) {
  * kept for the later calls.
  */
 heapline_stats totals() {
-  heapline_stats stats{};
   pthread_mutex_lock(&registry_mutex);
-  stats.allocs     = alloc_count.load(std::memory_order_relaxed);
-  stats.frees      = free_count.load(std::memory_order_relaxed);
-  stats.live_bytes = shared.live_bytes.load(std::memory_order_relaxed);
-  for (ThreadCounters* counters = registry; counters;
-       counters                 = counters->next) {
-    stats.allocs += counters->allocs.load(std::memory_order_relaxed);
-    stats.frees += counters->frees.load(std::memory_order_relaxed);
-    stats.live_bytes += counters->pending.load(std::memory_order_relaxed);
-  }
+  heapline_stats stats = sum_counters();
   pthread_mutex_unlock(&registry_mutex);
   stats.peak_bytes = raise_peak(stats.live_bytes, false);
   return stats;
@@ -510,6 +546,9 @@ void reset_registry_in_child() {
   registered_threads = mine ? 1 : 0;
   shared.limit_shift.store(shift_for(registered_threads),
                            std::memory_order_relaxed);
+  // The child opens a record of its own at its next snapshot.
+  if (snapshot_fd >= 0) close(snapshot_fd);
+  snapshot_fd = -1;
   pthread_mutex_unlock(&registry_mutex);
 }
 
@@ -522,6 +561,10 @@ __attribute__((constructor)) void init() {
       pthread_atfork(lock_registry, unlock_registry, reset_registry_in_child) ==
           0)
     registry_ready.store(true, std::memory_order_release);
+  const char* output = getenv("HEAPLINE_OUTPUT");
+  const char* off    = getenv("HEAPLINE_SNAPSHOT");
+  if (output && *output && !(off && std::strcmp(off, "0") == 0))
+    shared.next_snapshot.store(kFirstSnapshotBytes, std::memory_order_relaxed);
 }
 
 /**
@@ -561,43 +604,15 @@ void print_summary(const heapline::Record& record) {
 }
 
 /**
- * @brief Write @p record as CSV to the file named by HEAPLINE_OUTPUT, or to
- * stderr when that file cannot be opened. Does nothing when HEAPLINE_OUTPUT
- * is not set.
+ * @brief Fill @p record with @p stats, @p status and the identity of the
+ * process. @p host, which must start empty, receives the host name.
  */
-void write_record(const heapline::Record& record) {
-  const char* pattern = getenv("HEAPLINE_OUTPUT");
-  if (!pattern || !*pattern) return;
-  char text[1024];
-  int len = heapline::format_record(text, sizeof(text), record);
-  if (len < 0) return;
-  char path[PATH_MAX];
-  heapline::expand_path(path, sizeof(path), pattern, record.pid, record.rank,
-                        record.host);
-  int fd  = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-  int out = fd < 0 ? STDERR_FILENO : fd;
-  [[maybe_unused]] ssize_t written = write(out, text, len);
-  if (fd >= 0) close(fd);
-}
-
-/**
- * @brief Gather the final counters when the library is unloaded, print the
- * summary and write the record.
- *
- * Uses stack buffers, snprintf and write rather than stdio streams, which may
- * allocate or already be closed at this point.
- */
-__attribute__((destructor)) void finish() {
-  char host[256] = "";
+void fill_record(heapline::Record& record, char (&host)[256],
+                 const heapline_stats& stats,
+                 const heapline::ProcStatus& status) {
   gethostname(host, sizeof(host) - 1);
-  const char* job             = getenv("SLURM_JOB_ID");
-  heapline::ProcStatus status = heapline::read_status();
-
-  publish_own();
-  const heapline_stats stats = totals();
-
-  heapline::Record record;
-  record.rank = heapline::find_rank(
+  const char* job = getenv("SLURM_JOB_ID");
+  record.rank     = heapline::find_rank(
       +[](const char* name) -> const char* { return getenv(name); });
   record.host            = host;
   record.pid             = getpid();
@@ -611,6 +626,110 @@ __attribute__((destructor)) void finish() {
   record.live_heap_at_exit_bytes = stats.live_bytes;
   record.vmhwm_bytes             = status.vmhwm_bytes;
   record.vmrss_at_exit_bytes     = status.vmrss_bytes;
+}
+
+/**
+ * @brief Open, emptied, the file that HEAPLINE_OUTPUT names for @p record.
+ * Returns -1 when HEAPLINE_OUTPUT is not set or the file cannot be opened.
+ */
+int open_output(const heapline::Record& record) {
+  const char* pattern = getenv("HEAPLINE_OUTPUT");
+  if (!pattern || !*pattern) return -1;
+  char path[PATH_MAX];
+  heapline::expand_path(path, sizeof(path), pattern, record.pid, record.rank,
+                        record.host);
+  return open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+}
+
+/**
+ * @brief Write @p record as CSV to the file named by HEAPLINE_OUTPUT, or to
+ * stderr when that file cannot be opened. Does nothing when HEAPLINE_OUTPUT
+ * is not set.
+ */
+void write_record(const heapline::Record& record) {
+  const char* pattern = getenv("HEAPLINE_OUTPUT");
+  if (!pattern || !*pattern) return;
+  char text[1024];
+  int len = heapline::format_record(text, sizeof(text), record);
+  if (len < 0) return;
+  int fd                           = open_output(record);
+  int out                          = fd < 0 ? STDERR_FILENO : fd;
+  [[maybe_unused]] ssize_t written = write(out, text, len);
+  if (fd >= 0) close(fd);
+}
+
+/**
+ * @brief Rewrite the record with the current counters, marked as not
+ * complete, so that a process killed before its exit, by the OOM killer for
+ * instance, leaves its figures as of its last snapshot. Called by raise_peak()
+ * once the peak reaches next_snapshot, which then moves 1/64 above the peak:
+ * about 700 snapshots from 16 MiB to 1 TiB.
+ *
+ * Skipped when registry_mutex is busy, as in register_thread(): the caller may
+ * hold it, and waiting could deadlock with a fork. A later raise of the peak
+ * tries again. The file is opened at the first snapshot, and again in a forked
+ * child. When it cannot be opened, snapshots stop and the record is written at
+ * exit only. Nothing here allocates.
+ */
+void snapshot() {
+  if (pthread_mutex_trylock(&registry_mutex) != 0) return;
+  const int64_t peak = shared.peak_bytes.load(std::memory_order_relaxed);
+  if (peak >= shared.next_snapshot.load(std::memory_order_relaxed)) {
+    shared.next_snapshot.store(peak + (peak >> 6), std::memory_order_relaxed);
+    heapline_stats stats = sum_counters();
+    stats.peak_bytes     = std::max(peak, stats.live_bytes);
+    // 4 KiB holds the VmHWM and VmRSS lines, which come early in the file.
+    char status_text[4096];
+    char host[256] = "";
+    heapline::Record record;
+    fill_record(record, host, stats,
+                heapline::read_status(status_text, sizeof(status_text)));
+    record.complete = false;
+    if (snapshot_fd < 0) {
+      snapshot_fd     = open_output(record);
+      snapshot_length = 0;
+    }
+    char text[1024];
+    int len = heapline::format_record(text, sizeof(text), record);
+    if (snapshot_fd < 0 || len < 0) {
+      shared.next_snapshot.store(INT64_MAX, std::memory_order_relaxed);
+    } else if (pwrite(snapshot_fd, text, len, 0) == len) {
+      // ponytail: a kill between pwrite and ftruncate leaves the tail of a
+      // longer earlier snapshot after the last line; write to a temporary
+      // file and rename it if that window ever matters.
+      if (len < snapshot_length) {
+        [[maybe_unused]] int cut = ftruncate(snapshot_fd, len);
+      }
+      snapshot_length = len;
+    }
+  }
+  pthread_mutex_unlock(&registry_mutex);
+}
+
+/**
+ * @brief Gather the final counters when the library is unloaded, print the
+ * summary and write the record.
+ *
+ * Uses stack buffers, snprintf and write rather than stdio streams, which may
+ * allocate or already be closed at this point.
+ */
+__attribute__((destructor)) void finish() {
+  // No snapshot may overwrite the complete record written below.
+  pthread_mutex_lock(&registry_mutex);
+  shared.next_snapshot.store(INT64_MAX, std::memory_order_relaxed);
+  if (snapshot_fd >= 0) close(snapshot_fd);
+  snapshot_fd = -1;
+  pthread_mutex_unlock(&registry_mutex);
+
+  char status_text[16384];
+  heapline::ProcStatus status =
+      heapline::read_status(status_text, sizeof(status_text));
+  publish_own();
+  const heapline_stats stats = totals();
+
+  char host[256] = "";
+  heapline::Record record;
+  fill_record(record, host, stats, status);
   print_summary(record);
   write_record(record);
 }

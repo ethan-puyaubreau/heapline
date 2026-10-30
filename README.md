@@ -47,10 +47,13 @@ a record of the process as CSV, read by `heapline-report`, pandas or a
 spreadsheet:
 
 ```
-# heapline 1
-rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,vmrss_at_exit_bytes
-3,node-a,51234,1655310,12.480,4153,4123,302268416,4.211,483532,331431936,9175040
+# heapline 2
+rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,vmrss_at_exit_bytes,complete
+3,node-a,51234,1655310,12.480,4153,4123,302268416,4.211,483532,331431936,9175040,1
 ```
+
+The record is rewritten while the heap grows, so a process killed by the OOM
+killer still leaves one, with `complete` set to 0.
 
 In the file name, `%p` is replaced with the process id, `%r` with the MPI
 rank and `%h` with the host name, so each rank gets its own file:

@@ -56,9 +56,9 @@ The record is a CSV file of three lines, described in [Output
 format](format.md):
 
 ```text
-# heapline 1
-rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,vmrss_at_exit_bytes
--1,node01,17438,,0.015,4154,4125,302236152,0.007,409800,11534336,10485760
+# heapline 2
+rank,host,pid,job,elapsed_s,allocs,frees,peak_heap_bytes,peak_heap_time_s,live_heap_at_exit_bytes,vmhwm_bytes,vmrss_at_exit_bytes,complete
+-1,node01,17438,,0.015,4154,4125,302236152,0.007,409800,11534336,10485760,1
 ```
 
 The host name is shown here as `node01`. Your pid will differ, and so will

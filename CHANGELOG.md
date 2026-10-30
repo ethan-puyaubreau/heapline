@@ -7,11 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-30
+
 ### Added
 
 - A case study page measures miniAMR, LULESH and CloverLeaf under heapline,
   built with Spack, and checks the figures against GNU time and miniAMR's own
   count.
+- A process killed before its exit, by the OOM killer or any other SIGKILL,
+  leaves a record. With `HEAPLINE_OUTPUT` set, heapline rewrites the record
+  once the heap peak reaches 16 MiB, then each time the peak grows by 1/64,
+  about 700 times at most up to 1 TiB. The record written at exit replaces
+  the last snapshot. `HEAPLINE_SNAPSHOT=0` turns snapshots off.
+- `heapline-report` warns about the ranks whose record is a snapshot rather
+  than a record written at exit.
+- Tests `killed_snapshot_on`, `killed_snapshot_off` and `report_snapshot`.
+  `tsan_stress` takes snapshots from the start.
+
+### Changed
+
+- **Breaking:** records are in format version 2, which adds the `complete`
+  column: 1 for a record written at exit, 0 for a snapshot. Tools that only
+  accept version 1 refuse them. `heapline-report` reads both versions and
+  writes version 2 with `--csv`.
 
 ## [0.5.0] - 2026-10-17
 
@@ -152,7 +170,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI on GCC and Clang with a clang-format check, and release archives built on
   version tags.
 
-[Unreleased]: https://github.com/ethan-puyaubreau/heapline/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ethan-puyaubreau/heapline/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ethan-puyaubreau/heapline/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ethan-puyaubreau/heapline/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/ethan-puyaubreau/heapline/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ethan-puyaubreau/heapline/compare/v0.3.0...v0.4.0

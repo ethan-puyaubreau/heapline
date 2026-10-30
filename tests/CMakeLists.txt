@@ -86,8 +86,18 @@ add_test(NAME record_rank_priority
 add_test(NAME record_fallback
          COMMAND sh -c "LD_PRELOAD=\"$1\" \
            HEAPLINE_OUTPUT=/nonexistent/dir/record.csv \"$2\" 2>&1 \
-           | grep -q '^# heapline 1$'"
+           | grep -q '^# heapline 2$'"
                  sh ${lib} ${prog})
+
+# A process killed with SIGKILL leaves its last snapshot, unless snapshots are
+# off.
+add_executable(killed killed.cpp)
+target_compile_options(killed PRIVATE -fno-builtin)
+foreach(mode on off)
+  add_test(NAME killed_snapshot_${mode}
+           COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/check_killed.sh ${lib}
+                   $<TARGET_FILE:killed> ${mode})
+endforeach()
 
 # The heap peak is reached at the start or one second in, and the record must
 # say so.
@@ -124,8 +134,10 @@ if(HEAPLINE_ENABLE_TSAN)
   target_link_options(tsan_stress PRIVATE -fsanitize=thread)
   target_link_libraries(tsan_stress PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
   add_test(NAME tsan_stress COMMAND tsan_stress)
+  # With HEAPLINE_OUTPUT set, the peaks of the threads and of the reader write
+  # snapshots of the record.
   set_tests_properties(tsan_stress PROPERTIES
-                       ENVIRONMENT TSAN_OPTIONS=halt_on_error=1
+                       ENVIRONMENT "TSAN_OPTIONS=halt_on_error=1;HEAPLINE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/tsan_stress.csv"
                        TIMEOUT 120)
 endif()
 
@@ -153,7 +165,7 @@ add_test(NAME report_job
                  sh ${report} ${data})
 add_test(NAME report_bad_version
          COMMAND sh -c "! \"$1\" \"$2/bad-version\" 2>bad_version.err \
-           && grep -q 'unsupported format version 2' bad_version.err \
+           && grep -q 'unsupported format version 3' bad_version.err \
            && grep -q 'no valid record' bad_version.err"
                  sh ${report} ${data})
 add_test(NAME report_truncated
@@ -195,6 +207,11 @@ add_test(NAME report_duplicate_rank
            2>duplicate_rank.err && grep -q \
            'duplicate rank 1 in .*heapline.a.csv and .*heapline.b.csv' \
            duplicate_rank.err"
+                 sh ${report} ${data})
+# A snapshot left by a killed process is reported as such.
+add_test(NAME report_snapshot
+         COMMAND sh -c "\"$1\" \"$2/snapshot\" >/dev/null 2>snapshot.err \
+           && grep -q 'no exit record for rank 1 (killed?)' snapshot.err"
                  sh ${report} ${data})
 add_test(NAME report_several_jobs
          COMMAND sh -c "\"$1\" \"$2/several-jobs\" >/dev/null \

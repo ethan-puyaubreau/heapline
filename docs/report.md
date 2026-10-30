@@ -14,8 +14,10 @@ and prints a summary of the job.
 | `--csv FILE` | Also write all records, sorted by rank, to one CSV file. Write it outside the records directory, since every `.csv` file of that directory is read as a record |
 | `--version` | Print the version and exit |
 
-Files that are not version 1 records, or that lack their values, are reported
-on stderr and skipped. A process killed by a signal writes no file at all: an
+Files that are not version 1 or 2 records, or that lack their values, are
+reported on stderr and skipped. A process killed by a signal leaves the last
+[snapshot](format.md#snapshots) of its record: a warning lists the ranks whose
+figures come from a snapshot rather than from a record written at exit. An
 empty or truncated file comes from a failed write, or from a kill between the
 opening of the file and the write. Gaps in the rank numbers are reported as
 missing ranks. Missing ranks are the gaps below the highest rank seen, so a
