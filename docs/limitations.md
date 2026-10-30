@@ -19,9 +19,12 @@
   are not affected.
 - Memory obtained with `mmap` directly, or allocated on a GPU, is not heap
   and is not counted.
-- A process killed by a signal writes no record. `heapline-report` lists it as
-  a missing rank, unless it was the highest rank of the job, which it cannot
-  tell apart from a smaller job.
+- A process killed by a signal leaves the last snapshot of its record, with
+  `complete` set to 0, see [Snapshots](format.md#snapshots). Its resident
+  peak at the kill can be well above the recorded one. Killed before its heap
+  reached 16 MiB, or with `HEAPLINE_SNAPSHOT=0`, it leaves no record:
+  `heapline-report` lists it as a missing rank, unless it was the highest rank
+  of the job, which it cannot tell apart from a smaller job.
 - The summary on stderr is lost when the program closes stderr before
   exiting, as GNU coreutils do. The record written to `HEAPLINE_OUTPUT` is not.
 - A wrapper process can overwrite the record of the program. A script run

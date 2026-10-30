@@ -26,8 +26,9 @@ of its ranks, the figure to compare with the
 request of a Slurm job; and the ranks with the highest peaks (see
 .BR \-\-top ).
 .PP
-Files that cannot be read, that are not version 1 records, or that hold
-missing or bad values are reported on standard error and skipped.
+Files that cannot be read, that are not version 1 or 2 records, or that
+hold missing or bad values are reported on standard error and skipped.
+The ranks whose record is the last snapshot of a killed process are listed.
 Gaps in the rank numbers are reported as missing ranks, two files that hold
 the same rank are named, and the jobs are listed when the records come from
 several Slurm jobs.
@@ -117,7 +118,8 @@ Otherwise, give
 .B LD_PRELOAD
 the absolute path of the library on a shared file system.
 .PP
-A process killed by a signal writes no record.
+A process killed by a signal leaves the last snapshot of its record, taken
+when its heap peak last grew, or no record if its heap stayed below 16 MiB.
 Statically linked programs, and programs that use another allocator such as
 jemalloc or tcmalloc, are not seen.
 .SH SEE ALSO
